@@ -1,0 +1,5 @@
+# DISPOSABLE test UI only — do NOT ship this to the main product.
+# Install AFTER requirements.txt:  pip install -r requirements-ui.txt
+
+streamlit==1.41.1
+requests==2.32.3

@@ -1,0 +1,18 @@
+# Core gateway (lightweight — installs fast, CPU-friendly).
+# OCR / embeddings / UI deps are in the other requirements-*.txt files so you
+# can install only what you need.
+
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+pydantic-settings==2.7.1
+httpx==0.28.1
+python-multipart==0.0.20
+python-dotenv==1.0.1
+
+# PDF native-text extraction (fast path before OCR). Both are pure-ish wheels.
+pymupdf==1.25.1
+pdfplumber==0.11.4
+
+# Fuzzy skill matching fallback (used when embeddings are disabled/unavailable).
+rapidfuzz==3.11.0

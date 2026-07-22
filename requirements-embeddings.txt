@@ -1,0 +1,11 @@
+# Local semantic embeddings for skill matching.
+# Install AFTER requirements.txt:  pip install -r requirements-embeddings.txt
+#
+# On a CPU box this pulls the CPU build of torch (~200 MB). That's fine — the
+# embedding model (bge-small, ~130 MB) runs comfortably on CPU.
+# If torch is slow to resolve, install the CPU wheel explicitly first:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+sentence-transformers==3.3.1
+# torch is a transitive dep of sentence-transformers; pin the CPU-friendly line.
+torch==2.5.1

@@ -1,0 +1,55 @@
+# CLOUD / GPU deployment: vLLM serves Qwen3-8B, the gateway fronts it with the
+# OpenAI-compatible API + OCR + matching.
+#
+#   docker compose up -d --build
+#   # point your platform at  http://<host>:8080/v1   (key = GATEWAY_API_KEYS)
+#
+# Requires NVIDIA GPU + nvidia-container-toolkit on the host.
+services:
+  vllm:
+    image: vllm/vllm-openai:latest
+    command: >
+      --model Qwen/Qwen3-8B
+      --served-model-name Qwen/Qwen3-8B
+      --max-model-len 16384
+      --gpu-memory-utilization 0.90
+      --port 8000
+    volumes:
+      - hf-cache:/root/.cache/huggingface
+    environment:
+      - HUGGING_FACE_HUB_TOKEN=${HUGGING_FACE_HUB_TOKEN:-}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+
+  gateway:
+    build:
+      context: .
+      args:
+        INSTALL_HEAVY: "true"
+    depends_on:
+      - vllm
+    environment:
+      - LLM_BACKEND=openai_upstream
+      - UPSTREAM_BASE_URL=http://vllm:8000/v1
+      - UPSTREAM_API_KEY=novllmkeyneeded
+      - MODEL_NAME=Qwen/Qwen3-8B
+      - SERVED_MODEL_ID=slm-qwen3-8b
+      - FORCE_MODEL=true
+      - ENABLE_THINKING=false
+      - EMBEDDINGS_MODE=local
+      - OCR_ENABLED=true
+      - OCR_VERSION=v5
+      # Set one or more keys your platform will send as its OpenAI key:
+      - GATEWAY_API_KEYS=${GATEWAY_API_KEYS:-}
+    ports:
+      - "8080:8000"
+    restart: unless-stopped
+
+volumes:
+  hf-cache:

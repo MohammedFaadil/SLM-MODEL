@@ -1,0 +1,40 @@
+# CPU deployment: Ollama serves Qwen3-8B (quantized), gateway fronts it.
+# No GPU required. Good for a modest server or for containerized local testing.
+#
+#   docker compose -f docker-compose.cpu.yml up -d --build
+#   docker compose -f docker-compose.cpu.yml exec ollama ollama pull qwen3:8b
+#   # point your platform at  http://<host>:8080/v1
+services:
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama:/root/.ollama
+    ports:
+      - "11434:11434"
+    restart: unless-stopped
+
+  gateway:
+    build:
+      context: .
+      args:
+        INSTALL_HEAVY: "true"
+    depends_on:
+      - ollama
+    environment:
+      - LLM_BACKEND=openai_upstream
+      - UPSTREAM_BASE_URL=http://ollama:11434/v1
+      - UPSTREAM_API_KEY=ollama
+      - MODEL_NAME=qwen3:8b
+      - SERVED_MODEL_ID=slm-qwen3-8b
+      - FORCE_MODEL=true
+      - ENABLE_THINKING=false
+      - EMBEDDINGS_MODE=local
+      - OCR_ENABLED=true
+      - OCR_VERSION=v5
+      - GATEWAY_API_KEYS=${GATEWAY_API_KEYS:-}
+    ports:
+      - "8080:8000"
+    restart: unless-stopped
+
+volumes:
+  ollama:

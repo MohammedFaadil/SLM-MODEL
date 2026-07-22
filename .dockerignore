@@ -1,0 +1,17 @@
+.venv/
+venv/
+.git/
+ui/
+tests/
+models/
+*.gguf
+*.safetensors
+__pycache__/
+*.pyc
+.env
+.env.*
+!.env.example
+.pytest_cache/
+*.log
+uploads/
+tmp/
