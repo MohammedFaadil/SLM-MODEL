@@ -9,7 +9,6 @@
 """
 from __future__ import annotations
 
-import asyncio
 import json
 from typing import Optional
 
@@ -162,20 +161,17 @@ async def match_upload(
     except Exception:
         skill_list = [s.strip() for s in skills.split(",") if s.strip()]
 
-    # Job creation and resume parsing are independent -> run them concurrently.
-    job, candidate = await asyncio.gather(
-        create_job(
-            JobCreateRequest(
-                title=title,
-                skills=skill_list,
-                prompt=prompt,
-                min_years_experience=min_years_experience,
-                seniority=seniority,
-                enrich=enrich_job,
-            )
-        ),
-        parse_resume(extraction.text),
+    job = await create_job(
+        JobCreateRequest(
+            title=title,
+            skills=skill_list,
+            prompt=prompt,
+            min_years_experience=min_years_experience,
+            seniority=seniority,
+            enrich=enrich_job,
+        )
     )
+    candidate = await parse_resume(extraction.text)
     result = await match_candidate(job, candidate, justify=justify)
     await run_in_threadpool(repo.save_candidate, candidate)
     await run_in_threadpool(repo.save_match, job, candidate, result)

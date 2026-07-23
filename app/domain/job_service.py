@@ -7,7 +7,6 @@ JSON string (which breaks small-model JSON):
 """
 from __future__ import annotations
 
-import asyncio
 from typing import Any, Dict, List
 
 from ..config import settings
@@ -91,25 +90,12 @@ async def create_job(req: JobCreateRequest) -> JobSpec:
 
     payload = _payload(req)
 
-    # Structured fields (JSON) and the long description (text) both derive from the
-    # same inputs, so run them CONCURRENTLY to roughly halve job-creation latency.
-    fields_res, desc_res = await asyncio.gather(
-        chat_json(JOB_FIELDS_SYSTEM, job_fields_user(payload), max_tokens=1200),
-        chat_text(
-            JOB_DESCRIPTION_SYSTEM,
-            job_description_user(payload, {}),
-            temperature=0.5,
-            max_tokens=1800,
-            think=settings.domain_reasoning,
-        ),
-        return_exceptions=True,
-    )
-    fields: Dict[str, Any] = fields_res if isinstance(fields_res, dict) else {}
-    if isinstance(fields_res, Exception):
-        log.warning("Job fields generation failed (%s).", fields_res)
-    description = desc_res if isinstance(desc_res, str) else ""
-    if isinstance(desc_res, Exception):
-        log.warning("Job description generation failed (%s).", desc_res)
+    # -- Stage 1: structured fields (strict JSON) -- #
+    fields: Dict[str, Any] = {}
+    try:
+        fields = await chat_json(JOB_FIELDS_SYSTEM, job_fields_user(payload), max_tokens=1200)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Job fields generation failed (%s).", exc)
 
     if not fields:
         # No structured data at all -> still give a useful basic spec.
@@ -134,6 +120,19 @@ async def create_job(req: JobCreateRequest) -> JobSpec:
             location=req.location or fields.get("location"),
             employment_type=req.employment_type or fields.get("employment_type"),
         )
+
+    # -- Stage 2: rich Markdown description (reasoning-friendly text) -- #
+    description = ""
+    try:
+        description = await chat_text(
+            JOB_DESCRIPTION_SYSTEM,
+            job_description_user(payload, fields),
+            temperature=0.5,
+            max_tokens=1800,
+            think=settings.domain_reasoning,
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Job description generation failed (%s).", exc)
 
     spec.description = description.strip() or _compose_description_fallback(spec, req)
     return spec
