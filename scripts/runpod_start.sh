@@ -11,13 +11,24 @@ VLLM_PORT="${VLLM_PORT:-8000}"
 GATEWAY_PORT="${PORT:-8080}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-16384}"
 GPU_MEM_UTIL="${GPU_MEM_UTIL:-0.90}"
+# Speed knobs. FP8 ~doubles throughput and halves VRAM on Ada/Hopper (RTX 4090,
+# L40S, H100). Set QUANTIZATION=none for full FP16, or =awq for an Ampere card
+# (A100/A40) with a pre-quantized AWQ model id in MODEL_NAME.
+QUANTIZATION="${QUANTIZATION:-fp8}"
+MAX_NUM_SEQS="${MAX_NUM_SEQS:-24}"
+QUANT_ARG=""
+if [ -n "${QUANTIZATION}" ] && [ "${QUANTIZATION}" != "none" ]; then
+    QUANT_ARG="--quantization ${QUANTIZATION}"
+fi
 
-echo "[runpod_start] launching vLLM for ${MODEL} on :${VLLM_PORT}"
+echo "[runpod_start] launching vLLM for ${MODEL} on :${VLLM_PORT} (quant=${QUANTIZATION}, max_seqs=${MAX_NUM_SEQS})"
 vllm serve "${MODEL}" \
     --served-model-name "${MODEL}" \
     --port "${VLLM_PORT}" \
     --max-model-len "${MAX_MODEL_LEN}" \
     --gpu-memory-utilization "${GPU_MEM_UTIL}" \
+    --max-num-seqs "${MAX_NUM_SEQS}" \
+    ${QUANT_ARG} \
     ${VLLM_EXTRA_ARGS:-} &
 VLLM_PID=$!
 

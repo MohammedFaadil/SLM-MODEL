@@ -13,6 +13,8 @@ services:
       --served-model-name Qwen/Qwen3-8B
       --max-model-len 16384
       --gpu-memory-utilization 0.90
+      --max-num-seqs 24
+      --quantization fp8
       --port 8000
     volumes:
       - hf-cache:/root/.cache/huggingface
@@ -42,6 +44,7 @@ services:
       - SERVED_MODEL_ID=slm-qwen3-8b
       - FORCE_MODEL=true
       - ENABLE_THINKING=false
+      - DOMAIN_REASONING=false
       - EMBEDDINGS_MODE=local
       - OCR_ENABLED=true
       - OCR_VERSION=v5

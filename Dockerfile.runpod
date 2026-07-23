@@ -41,11 +41,14 @@ ENV LLM_BACKEND=openai_upstream \
     SERVED_MODEL_ID=slm-qwen3-8b \
     FORCE_MODEL=true \
     ENABLE_THINKING=false \
+    DOMAIN_REASONING=false \
     EMBEDDINGS_MODE=local \
     OCR_ENABLED=true \
     OCR_VERSION=v5 \
     OCR_USE_GPU=false \
     WARMUP_ON_START=true \
+    QUANTIZATION=fp8 \
+    MAX_NUM_SEQS=24 \
     PORT=8080
 
 EXPOSE 8080
