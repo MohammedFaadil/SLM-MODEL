@@ -1,0 +1,10 @@
+# Optional MSSQL persistence / audit log.
+# Install AFTER requirements.txt:  pip install -r requirements-db.txt
+#
+# Requires the Microsoft ODBC Driver 18 for SQL Server on the host:
+#   https://learn.microsoft.com/sql/connect/odbc/download-odbc-driver-for-sql-server
+# (On Windows Server, install the MSI; the driver name defaults to
+#  "ODBC Driver 18 for SQL Server".)
+
+SQLAlchemy==2.0.36
+pyodbc==5.2.0

@@ -30,6 +30,10 @@ class OpenAIUpstreamBackend(LLMBackend):
                 "Content-Type": "application/json",
             },
             timeout=httpx.Timeout(settings.request_timeout, connect=15.0),
+            limits=httpx.Limits(
+                max_connections=settings.httpx_max_connections,
+                max_keepalive_connections=settings.httpx_max_keepalive,
+            ),
         )
 
     # -- helpers ----------------------------------------------------------- #

@@ -45,11 +45,24 @@ class PaddleOCREngine:
         from paddleocr import PaddleOCR  # imported lazily
 
         ocr_version = _VERSION_MAP.get(self.version, "PP-OCRv4")
+        device = "gpu" if self.use_gpu else "cpu"
         # Ordered from richest to simplest so we degrade gracefully across
-        # paddleocr releases (kwargs get renamed / removed between versions).
-        attempts: List[dict] = [
+        # paddleocr releases (kwargs get renamed / removed between versions):
+        #   2.x -> use_gpu=True/False, show_log; 3.x -> device="gpu"/"cpu".
+        attempts: List[dict] = []
+        if self.use_gpu:
+            # Try GPU-explicit signatures first (needs paddlepaddle-gpu / CUDA).
+            attempts += [
+                dict(lang=self.lang, use_angle_cls=True, ocr_version=ocr_version,
+                     use_gpu=True, show_log=False),
+                dict(lang=self.lang, ocr_version=ocr_version, device="gpu"),
+                dict(lang=self.lang, use_textline_orientation=True, device="gpu"),
+                dict(lang=self.lang, device="gpu"),
+            ]
+        attempts += [
             dict(lang=self.lang, use_angle_cls=True, ocr_version=ocr_version,
                  use_gpu=self.use_gpu, show_log=False),
+            dict(lang=self.lang, ocr_version=ocr_version, device=device),
             dict(lang=self.lang, use_textline_orientation=True, ocr_version=ocr_version),
             dict(lang=self.lang, ocr_version=ocr_version),
             dict(lang=self.lang, use_angle_cls=True),

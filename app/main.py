@@ -5,9 +5,12 @@ Your platform points its OpenAI base_url at  http://<host>:8000/v1
 """
 from __future__ import annotations
 
+import asyncio
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -16,10 +19,29 @@ from .backends.factory import close_backend, get_backend
 from .config import settings
 from .logging_conf import configure_logging, get_logger
 from .openai_api.router import router as openai_router
+from .persistence import db, repo
 from .routes.domain_routes import router as domain_router
 
 configure_logging(settings.log_level)
 log = get_logger(__name__)
+
+
+async def _warmup() -> None:
+    """Load the model into (V)RAM so the first real request isn't a cold start."""
+    if settings.llm_backend != "openai_upstream":
+        return
+    try:
+        t0 = time.time()
+        await get_backend().chat_completion({
+            "model": settings.model_name,
+            "messages": [{"role": "user", "content": "ping"}],
+            "max_tokens": 1,
+            "temperature": 0.0,
+            "stream": False,
+        })
+        log.info("Warmup complete in %.1fs (model resident).", time.time() - t0)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Warmup skipped/failed (%s). Model will load on first request.", exc)
 
 
 @asynccontextmanager
@@ -30,8 +52,17 @@ async def lifespan(app: FastAPI):
     log.info("  embeddings=%s (%s)", settings.embeddings_mode, settings.embedding_model)
     log.info("  ocr=%s version=%s  auth=%s",
              settings.ocr_enabled, settings.ocr_version, settings.auth_required)
+
+    # Optional MSSQL persistence (connect + create tables); safe if disabled.
+    await run_in_threadpool(db.init)
+
+    if settings.warmup_on_start:
+        asyncio.create_task(_warmup())  # non-blocking: service is up immediately
+
     yield
+
     await close_backend()
+    await run_in_threadpool(db.dispose)
     log.info("SLM Gateway stopped")
 
 
@@ -44,15 +75,37 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Permissive CORS so the local Streamlit test UI can call the API.
-# Tighten allow_origins in production.
+# CORS. Defaults to "*" for local dev; set CORS_ALLOW_ORIGINS in production.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.cors_origin_list,
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def _access_log(request: Request, call_next):
+    """Best-effort request/latency audit to MSSQL (no-op when DB disabled)."""
+    t0 = time.perf_counter()
+    response = await call_next(request)
+    if settings.persist_requests and db.available():
+        path = request.url.path
+        if path.startswith(("/v1", "/api")):
+            latency_ms = int((time.perf_counter() - t0) * 1000)
+            try:
+                await run_in_threadpool(
+                    repo.save_request_log,
+                    path=path,
+                    method=request.method,
+                    status_code=response.status_code,
+                    latency_ms=latency_ms,
+                    client=request.client.host if request.client else "",
+                )
+            except Exception:  # noqa: BLE001
+                pass
+    return response
 
 
 @app.exception_handler(BackendError)

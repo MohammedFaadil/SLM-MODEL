@@ -161,7 +161,19 @@ Full interactive schema at `/docs`.
 
 ---
 
-## 6. Cloud GPU deployment (vLLM)
+## 6. Production deployment
+
+> **Deploying on a Windows GPU server (+ optional MSSQL)?** Follow the
+> step-by-step runbook in **[DEPLOYMENT.md](DEPLOYMENT.md)** — it covers Ollama-GPU
+> setup, running as a Windows service, the firewall/HTTPS URL, MSSQL persistence,
+> and the exact two values to hand the product team.
+>
+> **Hosting on RunPod (GPU cloud)?** See [DEPLOYMENT.md §10b](DEPLOYMENT.md#10b-runpod-gpu-cloud-hosting).
+> Build `Dockerfile.runpod` (vLLM + gateway in one image), deploy it as a GPU Pod,
+> expose port 8080 → your SLM URL is `https://<pod-id>-8080.proxy.runpod.net/v1`.
+> GPU OCR is optional (`OCR_USE_GPU=true` + `requirements-ocr-gpu.txt`).
+
+### Cloud GPU with vLLM (Linux/Docker)
 
 On a GPU host with Docker + NVIDIA Container Toolkit:
 

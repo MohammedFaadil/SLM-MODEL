@@ -12,7 +12,8 @@ from __future__ import annotations
 import json
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
 from ..config import settings
@@ -26,6 +27,7 @@ from ..domain.schemas import (
     MatchResult,
 )
 from ..logging_conf import get_logger
+from ..persistence import repo
 from ..security import require_api_key
 
 log = get_logger(__name__)
@@ -86,14 +88,18 @@ async def resume_parse_file(file: UploadFile = File(...)) -> CandidateProfile:
             status_code=422,
             detail="No text could be extracted from the document (even with OCR).",
         )
-    return await parse_resume(extraction.text)
+    profile = await parse_resume(extraction.text)
+    await run_in_threadpool(repo.save_candidate, profile)
+    return profile
 
 
 @router.post("/resume/parse-text", response_model=CandidateProfile)
 async def resume_parse_text(body: TextIn) -> CandidateProfile:
     if not body.text.strip():
         raise HTTPException(status_code=400, detail="Empty text.")
-    return await parse_resume(body.text)
+    profile = await parse_resume(body.text)
+    await run_in_threadpool(repo.save_candidate, profile)
+    return profile
 
 
 # --------------------------------------------------------------------------- #
@@ -103,7 +109,9 @@ async def resume_parse_text(body: TextIn) -> CandidateProfile:
 async def jobs_create(body: JobCreateRequest) -> JobSpec:
     if not body.title.strip():
         raise HTTPException(status_code=400, detail="Job title is required.")
-    return await create_job(body)
+    spec = await create_job(body)
+    await run_in_threadpool(repo.save_job, spec)
+    return spec
 
 
 # --------------------------------------------------------------------------- #
@@ -111,7 +119,9 @@ async def jobs_create(body: JobCreateRequest) -> JobSpec:
 # --------------------------------------------------------------------------- #
 @router.post("/match", response_model=MatchResult)
 async def match(body: MatchRequest) -> MatchResult:
-    return await match_candidate(body.job, body.candidate, justify=body.justify)
+    result = await match_candidate(body.job, body.candidate, justify=body.justify)
+    await run_in_threadpool(repo.save_match, body.job, body.candidate, result)
+    return result
 
 
 @router.post("/match/upload", response_model=MatchResult)
@@ -152,4 +162,25 @@ async def match_upload(
         )
     )
     candidate = await parse_resume(extraction.text)
-    return await match_candidate(job, candidate, justify=justify)
+    result = await match_candidate(job, candidate, justify=justify)
+    await run_in_threadpool(repo.save_candidate, candidate)
+    await run_in_threadpool(repo.save_match, job, candidate, result)
+    return result
+
+
+# --------------------------------------------------------------------------- #
+#  History (only returns data when MSSQL persistence is enabled)
+# --------------------------------------------------------------------------- #
+@router.get("/history/jobs")
+async def history_jobs(limit: int = Query(50, ge=1, le=500)) -> dict:
+    return {"items": await run_in_threadpool(repo.list_jobs, limit)}
+
+
+@router.get("/history/candidates")
+async def history_candidates(limit: int = Query(50, ge=1, le=500)) -> dict:
+    return {"items": await run_in_threadpool(repo.list_candidates, limit)}
+
+
+@router.get("/history/matches")
+async def history_matches(limit: int = Query(50, ge=1, le=500)) -> dict:
+    return {"items": await run_in_threadpool(repo.list_matches, limit)}

@@ -56,6 +56,31 @@ class Settings(BaseSettings):
     # ---- Uploads ----
     max_upload_mb: int = 25
 
+    # ---- Production / efficiency ----
+    # Comma-separated allowed CORS origins ("*" = any). Restrict in production.
+    cors_allow_origins: str = "*"
+    # Ping the model once on startup so the first real request isn't a cold load.
+    warmup_on_start: bool = True
+    # Outbound connection pool to the inference engine.
+    httpx_max_connections: int = 128
+    httpx_max_keepalive: int = 32
+
+    # ---- Persistence (optional MSSQL) ----
+    # Preferred: a full SQLAlchemy URL, e.g.
+    #   mssql+pyodbc://user:pass@host:1433/DbName?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes
+    database_url: str = ""
+    # Or provide components and we build the URL for you:
+    mssql_host: str = ""
+    mssql_port: int = 1433
+    mssql_database: str = ""
+    mssql_user: str = ""
+    mssql_password: str = ""
+    mssql_driver: str = "ODBC Driver 18 for SQL Server"
+    mssql_trust_cert: bool = True
+    mssql_encrypt: bool = True
+    # When persistence is on, also log every /v1 request (model, latency, status).
+    persist_requests: bool = True
+
     @field_validator("upstream_base_url")
     @classmethod
     def _strip_trailing_slash(cls, v: str) -> str:
@@ -72,6 +97,38 @@ class Settings(BaseSettings):
     @property
     def max_upload_bytes(self) -> int:
         return self.max_upload_mb * 1024 * 1024
+
+    @property
+    def cors_origin_list(self) -> List[str]:
+        raw = [o.strip() for o in self.cors_allow_origins.split(",") if o.strip()]
+        return raw or ["*"]
+
+    @property
+    def resolved_database_url(self) -> str:
+        """Full SQLAlchemy URL, either given directly or built from MSSQL parts."""
+        if self.database_url.strip():
+            return self.database_url.strip()
+        if self.mssql_host and self.mssql_database:
+            from urllib.parse import quote_plus
+
+            driver = quote_plus(self.mssql_driver)
+            auth = ""
+            if self.mssql_user:
+                auth = f"{quote_plus(self.mssql_user)}:{quote_plus(self.mssql_password)}@"
+            params = f"driver={driver}"
+            params += f"&TrustServerCertificate={'yes' if self.mssql_trust_cert else 'no'}"
+            params += f"&Encrypt={'yes' if self.mssql_encrypt else 'no'}"
+            if not self.mssql_user:
+                params += "&Trusted_Connection=yes"  # Windows integrated auth
+            return (
+                f"mssql+pyodbc://{auth}{self.mssql_host}:{self.mssql_port}/"
+                f"{self.mssql_database}?{params}"
+            )
+        return ""
+
+    @property
+    def persistence_enabled(self) -> bool:
+        return bool(self.resolved_database_url)
 
 
 @lru_cache
