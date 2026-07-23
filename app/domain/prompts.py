@@ -26,8 +26,13 @@ Rules:
 - "skills": concise canonical skill/tool/competency names actually evidenced in the
   resume (e.g. "python", "salesforce", "financial modeling", "project management").
   Deduplicate. Return the 10-30 most relevant.
-- "total_years_experience": a number estimated from the work-history date ranges
-  (sum of professional experience, ignoring overlaps). 0 if none/student.
+- "experience" MUST contain EVERY professional role in the resume — full-time jobs,
+  part-time work, and work internships — each with company, title, start, end. Put
+  schooling/degrees ONLY in "education", NEVER in "experience". Read the whole resume;
+  do not skip roles.
+- "total_years_experience": PROFESSIONAL work only. Sum the durations of the work roles
+  in "experience" (ignore overlaps). Do NOT count time spent studying / at university /
+  in education. 0 if the person has no professional work history.
 - "headline": one short line describing the candidate (their own title/level).
 - "strengths": 3-6 short bullet phrases capturing standout, evidence-backed strengths.
 - Keep "summary" to ONE factual sentence here (a detailed summary is written separately).
@@ -37,6 +42,8 @@ Rules:
 - For EACH experience entry, list "skills" = the specific tools/technologies/competencies
   actually used in THAT role (drawn from its bullet points). This drives per-skill
   experience math, so be thorough and accurate per role.
+- Keep each role's "highlights" to the 3-4 most important bullet points (concise), so the
+  JSON stays compact and complete.
 
 JSON schema (keys and shapes to follow exactly):
 {
@@ -246,17 +253,21 @@ authoritative and use them verbatim; do not recompute or contradict them.
 
 Write a thorough, well-organized, professional briefing in clear business English covering:
 - Who the candidate is and their overall seniority level.
-- Their total years of professional experience (use the provided number).
+- Their total years of PROFESSIONAL experience (use the provided number; this excludes time
+  spent studying — do not describe education as work experience).
+- Where they have worked: name the companies and roles from the experience list, with the
+  time periods, in a natural sentence or two ("Most recently, they have been a ... at ...
+  since ...; before that they worked as ... at ...").
+- What they are doing MOST RECENTLY / currently (the latest role) and its focus.
 - Their strongest skills and areas of expertise — and for the most important ones, how many
   years of hands-on experience they have (cite the provided per-skill years, e.g. "around 4
   years with Python, and roughly 2 years with AWS").
-- The domains/industries and types of work they have done, with concrete evidence from their
-  roles (scope, responsibilities, achievements).
+- Any certifications they hold (if the certifications list is non-empty, mention them).
 - Their standout strengths, and any noticeable gaps or areas that are less developed.
 
 Ground every statement in the provided data; never invent employers, titles, dates, or
-skills. Use flowing prose in a few short paragraphs (you may finish with a brief line on
-overall fit). Do NOT output JSON, markdown headings, or code fences."""
+skills. If a field is empty, simply omit it rather than saying data is missing. Use flowing
+prose in a few short paragraphs. Do NOT output JSON, markdown headings, or code fences."""
 
 
 def candidate_summary_user(profile: Dict[str, Any], skill_years: list, total_years, today: str) -> str:

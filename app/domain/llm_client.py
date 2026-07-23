@@ -70,7 +70,7 @@ def extract_json(text: str) -> Dict[str, Any]:
     if fence:
         text = fence.group(1).strip()
 
-    # Direct parse first.
+    # Direct parse first, then repaired, then truncation-recovered.
     for candidate in (text, _outermost_object(text)):
         if not candidate:
             continue
@@ -81,6 +81,18 @@ def extract_json(text: str) -> Dict[str, Any]:
                     return obj
             except Exception:
                 continue
+
+    # Last resort: the model output was cut off mid-JSON (token limit). Balance
+    # the open strings/brackets and try again — recovers most of the object.
+    salvaged = _repair(_close_truncated(text))
+    if salvaged:
+        try:
+            obj = json.loads(salvaged)
+            if isinstance(obj, dict):
+                log.warning("Recovered a truncated JSON response (%d chars).", len(text))
+                return obj
+        except Exception:
+            pass
     return {}
 
 
@@ -95,6 +107,44 @@ def _outermost_object(text: str) -> str:
 def _repair(text: str) -> str:
     # Remove trailing commas before } or ].
     return re.sub(r",\s*([}\]])", r"\1", text)
+
+
+def _close_truncated(text: str) -> str:
+    """Repair JSON cut off by the token limit: close any open string and balance
+    the remaining brackets so the largest valid prefix parses."""
+    start = text.find("{")
+    if start == -1:
+        return ""
+    s = text[start:]
+    stack, in_str, esc = [], False, False
+    for ch in s:
+        if esc:
+            esc = False
+            continue
+        if ch == "\\":
+            if in_str:
+                esc = True
+            continue
+        if ch == '"':
+            in_str = not in_str
+            continue
+        if in_str:
+            continue
+        if ch in "{[":
+            stack.append(ch)
+        elif ch == "}" and stack and stack[-1] == "{":
+            stack.pop()
+        elif ch == "]" and stack and stack[-1] == "[":
+            stack.pop()
+    out = s + ('"' if in_str else "")
+    stripped = out.rstrip()
+    if stripped.endswith(","):
+        out = stripped[:-1]
+    elif stripped.endswith(":"):
+        out = stripped + " null"
+    for ch in reversed(stack):
+        out += "}" if ch == "{" else "]"
+    return out
 
 
 async def chat_text(

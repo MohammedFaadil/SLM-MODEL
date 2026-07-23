@@ -144,9 +144,18 @@ def _fallback_summary(profile: CandidateProfile) -> str:
 async def parse_resume(text: str) -> CandidateProfile:
     data: Dict[str, Any] = {}
     try:
-        data = await chat_json(RESUME_PARSE_SYSTEM, resume_parse_user(text), max_tokens=1900)
+        # Generous budget: full structured extraction (roles + per-role skills +
+        # highlights) must not be truncated, or experience is lost.
+        data = await chat_json(RESUME_PARSE_SYSTEM, resume_parse_user(text), max_tokens=4096)
     except Exception as exc:  # noqa: BLE001
         log.warning("Resume LLM parse failed (%s); using heuristics.", exc)
+
+    if not data:
+        log.warning(
+            "Resume extraction returned no JSON (text=%d chars). Falling back to "
+            "heuristics — experience/roles will be limited. Consider a larger model.",
+            len(text),
+        )
 
     profile = _profile_from_llm(data) if data else CandidateProfile()
     _fill_heuristics(profile, text)
@@ -159,6 +168,12 @@ async def parse_resume(text: str) -> CandidateProfile:
     det_total = total_years(profile.experience)
     if det_total is not None:
         profile.total_years_experience = det_total
+
+    log.info(
+        "Parsed resume: %d roles, %d skills, total_years=%s (deterministic=%s).",
+        len(profile.experience), len(profile.skills),
+        profile.total_years_experience, det_total,
+    )
 
     # Always generate a detailed recruiter assessment in a dedicated text call
     # (richer + more reliable than squeezing it into the extraction JSON).
