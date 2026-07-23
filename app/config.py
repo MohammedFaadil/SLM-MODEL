@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     # candidate summary, fit justification). Big accuracy boost on GPU; set false
     # on a CPU-only box (it's much slower there).
     domain_reasoning: bool = True
+    # Reproducibility: greedy decoding (temperature 0) + fixed seed on every
+    # domain call, so the same inputs give the same output each time.
+    deterministic: bool = True
+    llm_seed: int = 42
     request_timeout: float = 600.0
 
     # ---- Embeddings ----

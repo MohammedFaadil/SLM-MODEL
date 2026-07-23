@@ -43,6 +43,19 @@ def _apply_thinking(
         messages.insert(0, {"role": "system", "content": "/no_think"})
 
 
+def _apply_sampling(payload: Dict[str, Any], temperature: float) -> None:
+    """Force reproducible decoding when DETERMINISTIC is on.
+
+    Greedy (temperature 0) + fixed seed => same input, same output every time.
+    """
+    if settings.deterministic:
+        payload["temperature"] = 0.0
+        payload["top_p"] = 1.0
+    else:
+        payload["temperature"] = temperature
+    payload["seed"] = settings.llm_seed
+
+
 def strip_reasoning(text: str) -> str:
     return _THINK_BLOCK.sub("", text or "").strip()
 
@@ -99,10 +112,10 @@ async def chat_text(
     payload: Dict[str, Any] = {
         "model": settings.model_name,
         "messages": messages,
-        "temperature": temperature,
         "max_tokens": max_tokens,
         "stream": False,
     }
+    _apply_sampling(payload, temperature)
     _apply_thinking(messages, payload, think)
     resp = await get_backend().chat_completion(payload)
     content = resp.get("choices", [{}])[0].get("message", {}).get("content", "")
@@ -125,11 +138,11 @@ async def chat_json(
     payload: Dict[str, Any] = {
         "model": settings.model_name,
         "messages": messages,
-        "temperature": temperature,
         "max_tokens": max_tokens,
         "stream": False,
         "response_format": {"type": "json_object"},
     }
+    _apply_sampling(payload, temperature)
     _apply_thinking(messages, payload, False if think is None else think)
     resp = await get_backend().chat_completion(payload)
     content = resp.get("choices", [{}])[0].get("message", {}).get("content", "")

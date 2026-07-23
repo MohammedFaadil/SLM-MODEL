@@ -117,22 +117,25 @@ with tab2:
             for edu in cand.get('education', []):
                 st.markdown(f"**{edu.get('degree')} in {edu.get('field')}** from {edu.get('institution')} ({edu.get('year')})")
 
-        # ---- AI Summary (on-demand, comprehensive) ----
+        # ---- AI Summary: auto-generated right after parsing; regenerate on demand ----
         st.markdown("---")
-        if st.button("🧠 Generate AI Summary", type="primary"):
+        st.subheader("🧠 AI Candidate Summary")
+        regenerate = st.button("🔄 Regenerate AI Summary", type="primary")
+        if regenerate or st.session_state.get("candidate_summary") is None:
             with st.spinner("Analyzing the full resume and computing per-skill experience..."):
                 try:
                     resp = requests.post(f"{BASE_URL}/candidate/summary", json=cand, timeout=900)
                     if resp.status_code == 200:
                         st.session_state.candidate_summary = resp.json()
                     else:
+                        st.session_state.candidate_summary = {}  # mark attempted (no retry loop)
                         st.error(f"Error {resp.status_code}: {resp.text}")
                 except Exception as e:
+                    st.session_state.candidate_summary = {}
                     st.error(f"Connection Error: {e}")
 
         summ = st.session_state.get("candidate_summary")
         if summ:
-            st.subheader("🧠 AI Candidate Summary")
             if summ.get("total_years_experience") is not None:
                 st.metric("Total Experience", f"{summ['total_years_experience']:g} years")
             st.markdown(summ.get("summary", ""))
