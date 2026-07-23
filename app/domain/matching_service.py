@@ -140,7 +140,7 @@ async def match_candidate(
                 MATCH_JUSTIFY_SYSTEM,
                 match_justify_user(facts),
                 temperature=0.3,
-                max_tokens=1600,
+                max_tokens=1100,
                 think=settings.domain_reasoning,
             )
             text = text.strip()
