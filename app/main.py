@@ -14,6 +14,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from . import __version__
 from .backends.base import BackendError
 from .backends.factory import close_backend, get_backend
 from .config import settings
@@ -68,7 +69,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="SLM Gateway (Qwen3-8B, OpenAI-compatible)",
-    version="0.1.0",
+    version=__version__,
     description="OpenAI-compatible SLM for recruiting: resume OCR, candidate "
     "summaries, and job↔candidate matching. Drop-in replacement — point your "
     "platform's OpenAI base_url at this server's /v1.",
@@ -127,6 +128,7 @@ async def _backend_error_handler(request: Request, exc: BackendError):
 async def root() -> dict:
     return {
         "name": "SLM Gateway",
+        "version": __version__,
         "model": settings.served_model_id,
         "openai_base_url": "/v1",
         "endpoints": {
@@ -135,6 +137,7 @@ async def root() -> dict:
             "models": "/v1/models",
             "ocr": "/api/ocr/parse",
             "resume": "/api/resume/parse",
+            "candidate_summary": "/api/candidate/summary",
             "jobs": "/api/jobs",
             "match": "/api/match",
         },
@@ -148,11 +151,13 @@ async def health() -> JSONResponse:
     backend_health = await get_backend().health()
     body = {
         "status": "ok" if backend_health.get("ok") else "degraded",
+        "version": __version__,
         "backend": backend_health,
         "features": {
             "ocr_enabled": settings.ocr_enabled,
             "ocr_version": settings.ocr_version,
             "embeddings_mode": settings.embeddings_mode,
+            "candidate_summary": True,
         },
         "model": settings.served_model_id,
     }

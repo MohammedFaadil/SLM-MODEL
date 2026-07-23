@@ -127,6 +127,13 @@ with tab2:
                     resp = requests.post(f"{BASE_URL}/candidate/summary", json=cand, timeout=900)
                     if resp.status_code == 200:
                         st.session_state.candidate_summary = resp.json()
+                    elif resp.status_code == 404:
+                        st.session_state.candidate_summary = {}
+                        st.error(
+                            "404 Not Found — the gateway is running OLDER code. "
+                            "Pull latest AND restart the gateway process (the API server "
+                            "does not hot-reload). Verify with /health → 'version' ≥ 0.2.0."
+                        )
                     else:
                         st.session_state.candidate_summary = {}  # mark attempted (no retry loop)
                         st.error(f"Error {resp.status_code}: {resp.text}")
