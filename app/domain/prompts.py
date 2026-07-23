@@ -23,8 +23,7 @@ Rules:
   evidenced in the resume. Deduplicate. Aim for the 10-30 most relevant.
 - "total_years_experience": a number estimated from the work history date ranges
   (sum of professional experience, ignoring overlaps). Use 0 if none/student.
-- "summary": 3-5 sentences, factual, recruiter-facing: who they are, core strengths,
-  domains, and seniority. Grounded strictly in the resume. No hype.
+- "summary": A very detailed justification and analysis of the candidate's resume profile, outlining their core strengths, domains, seniority, and overall fitness as a professional. Provide a comprehensive breakdown based strictly on the resume. Do not hallucinate.
 - "strengths": 3-6 short bullet phrases capturing standout strengths.
 
 JSON schema (keys and shapes to follow exactly):
@@ -56,15 +55,53 @@ def resume_parse_user(resume_text: str, max_chars: int = 16000) -> str:
 #  Job creation / enrichment
 # --------------------------------------------------------------------------- #
 JOB_CREATE_SYSTEM = """You are a senior technical recruiter writing a precise job specification.
-Given a title, seed skills, and experience level, produce a complete, realistic job spec.
+Given a title, seed skills, experience level, and a user prompt with detailed job requirements, produce a complete, realistic and highly detailed job spec. Ensure the job description is comprehensive and deeply tailored based on the user's prompt.
 
 Rules:
 - Output ONLY a single valid JSON object. No markdown, no commentary, no code fences.
-- Keep required_skills grounded in the provided skills plus the few technologies clearly
-  implied by the role. Do NOT pad with unrelated skills.
+- Keep required_skills grounded in the provided skills plus the few technologies clearly implied by the role. Do NOT pad with unrelated skills.
 - required_skills: must-haves. preferred_skills: nice-to-haves. Canonical short names.
 - responsibilities: 5-8 concise bullet phrases. qualifications: 4-6 bullet phrases.
-- description: a clean, professional 2-3 paragraph job description (plain text).
+- description: A highly detailed, professional job description formatted in Markdown. You MUST format the description strictly using this exact template structure, but the content inside MUST be rich, engaging, and heavily customized to the user's input. Do NOT just output a generic template. Use strong action verbs and professional recruiter tone.
+
+  # Job Description: [Job Title]
+
+  ### Job Title
+  [Job Title]
+
+  ### Location
+  [Determine Location from prompt, or use generic professional default e.g. Remote/Hybrid]
+
+  ### Employment Type
+  [Determine Employment Type from prompt, or default to Full-Time]
+
+  ### Experience
+  [Experience Level]
+
+  ## Job Summary
+  [Write a highly engaging, 3-4 sentence paragraph. Detail the core mission of the role, the impact the person will have, and why the company/team is a great place to work, directly leveraging the user's prompt.]
+
+  ## Key Responsibilities
+  [Write 6-8 comprehensive bullet points using strong action verbs (e.g., Design, Architect, Lead, Develop). Tailor these explicitly to the skills and requirements mentioned in the prompt.]
+  * ...
+  * ...
+
+  ## Required Skills
+  [List 5-8 must-have technical and soft skills as bullet points, matching the role's core needs.]
+  * ...
+
+  ## Preferred Skills
+  [List 3-5 nice-to-have skills, tools, or methodologies.]
+  * ...
+
+  ## Qualifications
+  [List 3-5 bullet points covering educational background, years of experience, and specific achievements or domain knowledge required.]
+  * ...
+
+  ## Benefits
+  [List 5-6 attractive, modern employee benefits tailored to the role's seniority and typical industry standards.]
+  * ...
+
 - Preserve the given min_years_experience and seniority if provided.
 
 JSON schema:
@@ -99,9 +136,7 @@ You are given FACTS already computed by a matching engine. Your job is ONLY to e
 Rules:
 - Output ONLY a valid JSON object: {"justification": str, "recommendation": str}.
 - Base everything strictly on the provided FACTS. Do NOT invent skills or experience.
-- justification: 3-5 sentences. State overall fit, name the strongest matched skills,
-  call out the most important missing skills, and note the experience fit. Be honest and
-  specific; tone must match the score (do not oversell a weak match).
+- justification: Provide a highly detailed explanation and justification of the candidate's fit for the role. State overall fit, thoroughly analyze the matched and missing skills, and evaluate their experience fit in depth. Ensure the explanation is detailed and provides concrete reasoning for the match score.
 - recommendation: one short line, e.g. "Strong fit — advance to technical interview",
   "Possible fit — screen for <gap>", or "Not a fit for this role".
 """

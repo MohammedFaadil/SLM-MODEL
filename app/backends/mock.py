@@ -39,6 +39,35 @@ class MockBackend(LLMBackend):
 
     def _content_for(self, payload: Dict[str, Any]) -> str:
         if _wants_json(payload):
+            text = _last_user_text(payload)
+            if "JOB INPUT" in text:
+                import json
+                mock_jd = {
+                    "title": "Software Developer",
+                    "seniority": "Junior",
+                    "min_years_experience": 1.0,
+                    "required_skills": ["C#", ".NET", "SQL Server", "HTML", "CSS", "JavaScript", "Git & GitHub", "REST APIs", "Object-Oriented Programming (OOP)", "Problem-solving and debugging"],
+                    "preferred_skills": ["Blazor", "Python", "Docker", "Azure or AWS", "CI/CD pipelines", "Agile/Scrum methodology"],
+                    "responsibilities": [
+                        "Develop, test, and maintain web applications.",
+                        "Write clean, efficient, and reusable code.",
+                        "Collaborate with designers, developers, and product managers.",
+                        "Debug and resolve software defects.",
+                        "Optimize application performance and scalability.",
+                        "Participate in code reviews and technical discussions.",
+                        "Integrate third-party APIs and databases.",
+                        "Prepare technical documentation when required."
+                    ],
+                    "qualifications": [
+                        "Bachelor's degree in Computer Science, Information Technology, or a related field.",
+                        "Strong understanding of software development principles.",
+                        "Good communication and teamwork skills."
+                    ],
+                    "location": "Chennai, Tamil Nadu (Hybrid)",
+                    "employment_type": "Full-Time",
+                    "description": "# Job Description: Software Developer\n\n### Job Title\nSoftware Developer\n\n### Location\nChennai, Tamil Nadu (Hybrid)\n\n### Employment Type\nFull-Time\n\n### Experience\n1–3 Years\n\n## Job Summary\nWe are looking for a passionate and motivated Software Developer to design, develop, test, and maintain high-quality software applications. The ideal candidate should have strong problem-solving skills, a solid understanding of programming concepts, and the ability to work collaboratively in an agile development environment.\n\n## Key Responsibilities\n* Develop, test, and maintain web applications.\n* Write clean, efficient, and reusable code.\n* Collaborate with designers, developers, and product managers.\n* Debug and resolve software defects.\n* Optimize application performance and scalability.\n* Participate in code reviews and technical discussions.\n* Integrate third-party APIs and databases.\n* Prepare technical documentation when required.\n\n## Required Skills\n* C#\n* .NET / ASP.NET Core\n* SQL Server\n* HTML, CSS, JavaScript\n* Git & GitHub\n* REST APIs\n* Object-Oriented Programming (OOP)\n* Problem-solving and debugging\n\n## Preferred Skills\n* Blazor\n* Python\n* Docker\n* Azure or AWS\n* CI/CD pipelines\n* Agile/Scrum methodology\n\n## Qualifications\n* Bachelor's degree in Computer Science, Information Technology, or a related field.\n* Strong understanding of software development principles.\n* Good communication and teamwork skills.\n\n## Benefits\n* Competitive salary\n* Health insurance\n* Paid leave\n* Flexible working hours\n* Learning and certification support\n* Career growth opportunities"
+                }
+                return json.dumps(mock_jd)
             return "{}"
         preview = _last_user_text(payload)[:280]
         return (

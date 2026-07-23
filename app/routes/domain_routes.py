@@ -129,6 +129,7 @@ async def match_upload(
     file: UploadFile = File(...),
     title: str = Form(...),
     skills: str = Form(""),
+    prompt: Optional[str] = Form(None),
     min_years_experience: Optional[float] = Form(None),
     seniority: Optional[str] = Form(None),
     enrich_job: bool = Form(True),
@@ -156,6 +157,7 @@ async def match_upload(
         JobCreateRequest(
             title=title,
             skills=skill_list,
+            prompt=prompt,
             min_years_experience=min_years_experience,
             seniority=seniority,
             enrich=enrich_job,

@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 class JobCreateRequest(BaseModel):
     title: str
     skills: List[str] = Field(default_factory=list)
+    prompt: Optional[str] = None
     min_years_experience: Optional[float] = None
     seniority: Optional[str] = None
     location: Optional[str] = None

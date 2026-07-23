@@ -35,7 +35,7 @@ tmp/
 
 # ---- The disposable test UI is intentionally kept out of main ----
 # (Comment the next line out if you WANT to version the UI locally.)
-ui/
+
 
 # ---- OS / IDE ----
 .DS_Store
