@@ -128,7 +128,8 @@ async def create_job(req: JobCreateRequest) -> JobSpec:
             JOB_DESCRIPTION_SYSTEM,
             job_description_user(payload, fields),
             temperature=0.5,
-            max_tokens=1800,
+            # Generous: with reasoning on, thinking tokens precede the JD itself.
+            max_tokens=2800,
             think=settings.domain_reasoning,
         )
     except Exception as exc:  # noqa: BLE001

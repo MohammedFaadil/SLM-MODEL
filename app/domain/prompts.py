@@ -246,31 +246,28 @@ def match_justify_user(facts: Dict[str, Any]) -> str:
 # =========================================================================== #
 #  COMPREHENSIVE CANDIDATE SUMMARY (plain text, HR-facing)
 # =========================================================================== #
-CANDIDATE_SUMMARY_SYSTEM = """You are a senior recruiter writing a COMPLETE, detailed candidate briefing for HR.
-You are given the candidate's fully parsed profile and PRE-COMPUTED experience numbers (total
-years and per-skill years) calculated from the resume dates — treat those numbers as
+CANDIDATE_SUMMARY_SYSTEM = """You are a senior recruiter writing a complete candidate briefing for HR.
+You are given the candidate's parsed profile and PRE-COMPUTED experience numbers (total years
+and per-skill years) that were calculated from the resume dates — treat those numbers as
 authoritative and use them verbatim; do not recompute or contradict them.
 
-Be COMPREHENSIVE: cover EVERYTHING present in the resume data. Write several well-organized
-paragraphs in clear, professional business English:
+Write a thorough, well-organized, professional briefing in clear business English covering:
+- Who the candidate is and their overall seniority level.
+- Their total years of PROFESSIONAL experience (use the provided number; this excludes time
+  spent studying — do not describe education as work experience).
+- Where they have worked: name the companies and roles from the experience list, with the
+  time periods, in a natural sentence or two ("Most recently, they have been a ... at ...
+  since ...; before that they worked as ... at ...").
+- What they are doing MOST RECENTLY / currently (the latest role) and its focus.
+- Their strongest skills and areas of expertise — and for the most important ones, how many
+  years of hands-on experience they have (cite the provided per-skill years, e.g. "around 4
+  years with Python, and roughly 2 years with AWS").
+- Any certifications they hold (if the certifications list is non-empty, mention them).
+- Their standout strengths, and any noticeable gaps or areas that are less developed.
 
-1) Overview: who the candidate is, their profession/domain, and overall seniority level.
-2) Total PROFESSIONAL experience: state the provided total years. This is WORK only and
-   already EXCLUDES time spent studying — never describe education/college as work experience.
-3) Work history: go through EVERY role in the experience list — full-time jobs AND internships
-   (explicitly call internships "internship") — naming the company, the title, and the time
-   period for each, from most recent to oldest. Clearly highlight what they are doing MOST
-   RECENTLY / currently and its focus.
-4) Skills & depth: their strongest skills and areas of expertise, and for the important ones,
-   how many years of hands-on experience they have (cite the provided per-skill years, e.g.
-   "about 4 years with Python, ~2 years with AWS").
-5) Education: their degrees, fields, and institutions.
-6) Certifications: list every certification if the certifications list is non-empty.
-7) Standout strengths, and any noticeable gaps or less-developed areas.
-
-Ground every statement strictly in the provided data; never invent employers, titles, dates,
-skills, or certifications. If a section's data is empty, simply skip it (do not say it's
-missing). Do NOT output JSON, markdown headings, or code fences — just clear prose paragraphs."""
+Ground every statement in the provided data; never invent employers, titles, dates, or
+skills. If a field is empty, simply omit it rather than saying data is missing. Use flowing
+prose in a few short paragraphs. Do NOT output JSON, markdown headings, or code fences."""
 
 
 def candidate_summary_user(profile: Dict[str, Any], skill_years: list, total_years, today: str) -> str:
@@ -285,10 +282,10 @@ def candidate_summary_user(profile: Dict[str, Any], skill_years: list, total_yea
              "start": e.get("start"), "end": e.get("end"),
              "duration_years": e.get("duration_years"),
              "highlights": (e.get("highlights") or [])[:4]}
-            for e in (profile.get("experience") or [])[:12]
+            for e in (profile.get("experience") or [])[:10]
         ],
-        "education": profile.get("education", [])[:6],
-        "certifications": profile.get("certifications", [])[:12],
+        "education": profile.get("education", [])[:4],
+        "certifications": profile.get("certifications", [])[:8],
         "strengths": profile.get("strengths", [])[:8],
     }
     return (

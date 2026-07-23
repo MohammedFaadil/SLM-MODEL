@@ -23,25 +23,6 @@ _PRESENT = ("present", "current", "now", "till date", "to date", "ongoing", "til
 
 _MIN_YEAR = 1950
 
-# Titles that are education/degrees, not professional roles. Used to keep study
-# time out of professional-experience math even if the model misfiles a degree
-# under "experience". Kept conservative to avoid excluding real jobs; work
-# internships/trainees are intentionally NOT matched (they count as experience).
-_EDU_TITLE = re.compile(
-    r"\b(b\.?tech|b\.e\.?|bachelor|master'?s|master of|masters|m\.?tech|m\.e\.?|"
-    r"mba|b\.?sc|m\.?sc|bca|mca|b\.?com|m\.?com|diploma|ph\.?d|doctorate|"
-    r"10th|12th|higher secondary|intermediate|sslc|hsc|undergraduate|postgraduate)\b",
-    re.I,
-)
-_STUDENT = re.compile(r"\bstudent\b", re.I)
-
-
-def _is_education_role(role: ExperienceItem) -> bool:
-    title = (role.title or "").strip()
-    if not title:
-        return False
-    return bool(_STUDENT.search(title) or _EDU_TITLE.search(title))
-
 
 def _today_index() -> int:
     d = _dt.date.today()
@@ -126,10 +107,7 @@ def _merge_months(intervals: List[Tuple[int, int]]) -> int:
 
 
 def total_years(experience: List[ExperienceItem]) -> Optional[float]:
-    intervals = [
-        iv for r in experience
-        if not _is_education_role(r) and (iv := role_interval(r.start, r.end))
-    ]
+    intervals = [iv for r in experience if (iv := role_interval(r.start, r.end))]
     if not intervals:
         return None
     return round(_merge_months(intervals) / 12.0, 1)
@@ -160,8 +138,7 @@ def skill_experience(profile: CandidateProfile) -> List[SkillExperience]:
         sk = normalize_skill(skill)
         intervals = [
             iv for role in profile.experience
-            if not _is_education_role(role) and _role_has_skill(role, sk)
-            and (iv := role_interval(role.start, role.end))
+            if _role_has_skill(role, sk) and (iv := role_interval(role.start, role.end))
         ]
         if intervals:
             years = round(_merge_months(intervals) / 12.0, 1)

@@ -38,11 +38,10 @@ class Settings(BaseSettings):
     served_model_id: str = "slm-qwen3-8b"
     force_model: bool = True
     enable_thinking: bool = False
-    # Qwen3 reasoning for long-form domain tasks (job description, candidate
-    # summary, fit justification). OFF by default = much faster (thinking emits a
-    # long hidden reasoning block before every answer). Turn on only if you want
-    # extra thoroughness and can accept ~2-3x slower responses.
-    domain_reasoning: bool = False
+    # Use Qwen3 reasoning for the long-form domain tasks (job description,
+    # candidate summary, fit justification). Big accuracy boost on GPU; set false
+    # on a CPU-only box (it's much slower there).
+    domain_reasoning: bool = True
     # Reproducibility: greedy decoding (temperature 0) + fixed seed on every
     # domain call, so the same inputs give the same output each time.
     deterministic: bool = True
