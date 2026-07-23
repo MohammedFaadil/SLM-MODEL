@@ -51,6 +51,8 @@ class ExperienceItem(BaseModel):
     start: Optional[str] = None
     end: Optional[str] = None
     highlights: List[str] = Field(default_factory=list)
+    skills: List[str] = Field(default_factory=list)  # skills/tools used in this role
+    duration_years: Optional[float] = None           # computed from start/end
 
 
 class EducationItem(BaseModel):
@@ -76,6 +78,23 @@ class CandidateProfile(BaseModel):
 # --------------------------------------------------------------------------- #
 #  Matching
 # --------------------------------------------------------------------------- #
+class SkillExperience(BaseModel):
+    skill: str
+    years: float                    # evidenced years of experience for this skill
+    evidenced: bool = True          # False = listed but not tied to a dated role
+
+
+class CandidateSummary(BaseModel):
+    name: Optional[str] = None
+    headline: Optional[str] = None
+    summary: str = ""               # comprehensive HR-facing narrative
+    total_years_experience: Optional[float] = None
+    skills: List[str] = Field(default_factory=list)
+    skill_experience: List[SkillExperience] = Field(default_factory=list)
+    strengths: List[str] = Field(default_factory=list)
+    top_domains: List[str] = Field(default_factory=list)
+
+
 class SkillMatch(BaseModel):
     skill: str
     matched: bool

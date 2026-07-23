@@ -115,6 +115,13 @@ def main() -> int:
     check("  extracted skills (heuristic lexicon)", len(cand.get("skills", [])) >= 4,
           str(cand.get("skills")))
 
+    print("\n== domain: candidate summary ==")
+    r = client.post("/api/candidate/summary", json=cand)
+    summ = r.json()
+    check("POST /api/candidate/summary", r.status_code == 200 and "summary" in summ,
+          f"skills={len(summ.get('skill_experience', []))}")
+    check("  skill_experience present", isinstance(summ.get("skill_experience"), list))
+
     print("\n== domain: match ==")
     r = client.post("/api/match", json={"job": job, "candidate": cand, "justify": True})
     m = r.json()

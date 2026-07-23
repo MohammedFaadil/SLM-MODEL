@@ -12,6 +12,7 @@ from typing import Any, Dict, Optional
 
 from ..config import settings
 from ..logging_conf import get_logger
+from .experience import skill_experience
 from .llm_client import chat_text
 from .prompts import MATCH_JUSTIFY_SYSTEM, match_justify_user
 from .schemas import CandidateProfile, JobSpec, MatchResult, SkillMatch
@@ -128,6 +129,10 @@ async def match_candidate(
             "candidate_title": candidate.current_title or candidate.headline,
             "candidate_strengths": candidate.strengths[:6],
             "candidate_summary": (candidate.summary or "")[:700],
+            "candidate_skill_years": [
+                {"skill": s.skill, "years": s.years}
+                for s in skill_experience(candidate)[:15] if s.evidenced
+            ],
             "key_responsibilities": job.responsibilities[:6],
         }
         try:

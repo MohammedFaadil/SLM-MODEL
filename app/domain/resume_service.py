@@ -63,6 +63,7 @@ def _profile_from_llm(data: Dict[str, Any]) -> CandidateProfile:
                 start=str(e.get("start")) if e.get("start") else None,
                 end=str(e.get("end")) if e.get("end") else None,
                 highlights=_as_list(e.get("highlights")),
+                skills=normalize_skills(_as_list(e.get("skills"))),
             )
         )
 
@@ -149,6 +150,15 @@ async def parse_resume(text: str) -> CandidateProfile:
 
     profile = _profile_from_llm(data) if data else CandidateProfile()
     _fill_heuristics(profile, text)
+
+    # Deterministic experience math from the parsed date ranges (more accurate
+    # and reproducible than the model's estimate).
+    from .experience import annotate_durations, total_years
+
+    annotate_durations(profile.experience)
+    det_total = total_years(profile.experience)
+    if det_total is not None:
+        profile.total_years_experience = det_total
 
     # Always generate a detailed recruiter assessment in a dedicated text call
     # (richer + more reliable than squeezing it into the extraction JSON).

@@ -85,6 +85,7 @@ with tab2:
                 resp = requests.post(f"{BASE_URL}/resume/parse", files=files)
                 if resp.status_code == 200:
                     st.session_state.candidate_profile = resp.json()
+                    st.session_state.candidate_summary = None  # reset old summary
                     st.success("Resume parsed successfully!")
                 else:
                     st.error(f"Error {resp.status_code}: {resp.text}")
@@ -115,6 +116,43 @@ with tab2:
         with st.expander("Education"):
             for edu in cand.get('education', []):
                 st.markdown(f"**{edu.get('degree')} in {edu.get('field')}** from {edu.get('institution')} ({edu.get('year')})")
+
+        # ---- AI Summary (on-demand, comprehensive) ----
+        st.markdown("---")
+        if st.button("🧠 Generate AI Summary", type="primary"):
+            with st.spinner("Analyzing the full resume and computing per-skill experience..."):
+                try:
+                    resp = requests.post(f"{BASE_URL}/candidate/summary", json=cand, timeout=900)
+                    if resp.status_code == 200:
+                        st.session_state.candidate_summary = resp.json()
+                    else:
+                        st.error(f"Error {resp.status_code}: {resp.text}")
+                except Exception as e:
+                    st.error(f"Connection Error: {e}")
+
+        summ = st.session_state.get("candidate_summary")
+        if summ:
+            st.subheader("🧠 AI Candidate Summary")
+            if summ.get("total_years_experience") is not None:
+                st.metric("Total Experience", f"{summ['total_years_experience']:g} years")
+            st.markdown(summ.get("summary", ""))
+
+            skill_exp = summ.get("skill_experience", [])
+            evidenced = [s for s in skill_exp if s.get("evidenced")]
+            if evidenced:
+                st.markdown("**Years of experience per skill:**")
+                st.dataframe(
+                    [{"Skill": s["skill"], "Years": s["years"]} for s in evidenced],
+                    use_container_width=True, hide_index=True,
+                )
+            other = [s["skill"] for s in skill_exp if not s.get("evidenced")]
+            if other:
+                st.caption("Also listed (not tied to a dated role): " + ", ".join(other))
+
+            if summ.get("strengths"):
+                st.markdown("**Strong points:**")
+                for s in summ["strengths"]:
+                    st.markdown(f"- {s}")
 
 
 # -----------------------------------------------------------------------------

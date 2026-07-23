@@ -31,6 +31,12 @@ Rules:
 - "headline": one short line describing the candidate (their own title/level).
 - "strengths": 3-6 short bullet phrases capturing standout, evidence-backed strengths.
 - Keep "summary" to ONE factual sentence here (a detailed summary is written separately).
+- For EACH experience entry, capture "start" and "end" dates AS PRECISELY as the resume
+  shows them (include the month when present, e.g. "Jan 2021"); use "Present" for current
+  roles. Accurate dates are used to compute years of experience.
+- For EACH experience entry, list "skills" = the specific tools/technologies/competencies
+  actually used in THAT role (drawn from its bullet points). This drives per-skill
+  experience math, so be thorough and accurate per role.
 
 JSON schema (keys and shapes to follow exactly):
 {
@@ -41,7 +47,7 @@ JSON schema (keys and shapes to follow exactly):
   "total_years_experience": number,
   "skills": [str],
   "experience": [{"title": str|null, "company": str|null, "start": str|null,
-                  "end": str|null, "highlights": [str]}],
+                  "end": str|null, "highlights": [str], "skills": [str]}],
   "education": [{"degree": str|null, "field": str|null, "institution": str|null,
                  "year": str|null}],
   "certifications": [str],
@@ -200,25 +206,79 @@ def job_description_user(payload: Dict[str, Any], fields: Dict[str, Any]) -> str
 # =========================================================================== #
 #  MATCH JUSTIFICATION (plain text, grounded in pre-computed facts)
 # =========================================================================== #
-MATCH_JUSTIFY_SYSTEM = """You are a recruiter explaining a candidate-vs-job fit to a hiring manager.
-You are given FACTS already computed by a matching engine (skill matches/gaps, experience,
-scores, candidate strengths). Explain the fit clearly and honestly.
+MATCH_JUSTIFY_SYSTEM = """You are a senior recruiter writing a hiring recommendation for an HR manager
+who is NOT technical. You are given FACTS already computed by a matching engine (matched
+skills, gaps, per-skill and total experience, scores, strengths). Turn them into a warm,
+professional, easy-to-read recommendation — full sentences, plain business English, no
+jargon dumps or bullet-point shorthand.
 
-Write a DETAILED, well-reasoned justification that:
-- opens with the overall verdict and why (reference the score),
-- names the strongest matched requirements and what evidence supports them,
-- calls out the most important missing/weak requirements and how much they matter,
-- assesses the experience-level fit,
-- ends with a clear hiring-manager takeaway: should they proceed, and why / why not.
+Write 2-3 short paragraphs that flow naturally:
+1. Open by acknowledging what the candidate genuinely brings — name the specific areas and
+   skills where they are strong, in encouraging language (e.g. "The candidate has solid,
+   hands-on knowledge of ... which maps well to this role.").
+2. Then, honestly and constructively, note where they are lighter or missing skills — name
+   those specific skills — and explain how much those gaps actually matter for THIS role
+   (a nice-to-have gap is very different from a core-requirement gap). Comment on whether
+   their years of experience meet what the role needs.
+3. Close with a clear, well-reasoned recommendation: whether to move forward with this
+   candidate or not, and WHY — in language an HR manager can act on and repeat to others.
 
-Rules: base EVERYTHING strictly on the provided FACTS — do NOT invent skills, employers,
-or experience. Match the tone to the score (never oversell a weak match). 4-7 sentences,
-plain prose. Do NOT output JSON."""
+Rules: base EVERYTHING strictly on the provided FACTS — never invent skills, employers, or
+experience. Be honest; match the tone to the score (don't oversell a weak fit or dismiss a
+strong one). Write for a person, not a spreadsheet. Do NOT output JSON, headings, or lists."""
 
 
 def match_justify_user(facts: Dict[str, Any]) -> str:
     return (
         "FACTS (JSON):\n"
         + json.dumps(facts, ensure_ascii=False, indent=2, default=str)
-        + "\n\nWrite the fit justification now."
+        + "\n\nWrite the hiring recommendation now."
+    )
+
+
+# =========================================================================== #
+#  COMPREHENSIVE CANDIDATE SUMMARY (plain text, HR-facing)
+# =========================================================================== #
+CANDIDATE_SUMMARY_SYSTEM = """You are a senior recruiter writing a complete candidate briefing for HR.
+You are given the candidate's parsed profile and PRE-COMPUTED experience numbers (total years
+and per-skill years) that were calculated from the resume dates — treat those numbers as
+authoritative and use them verbatim; do not recompute or contradict them.
+
+Write a thorough, well-organized, professional briefing in clear business English covering:
+- Who the candidate is and their overall seniority level.
+- Their total years of professional experience (use the provided number).
+- Their strongest skills and areas of expertise — and for the most important ones, how many
+  years of hands-on experience they have (cite the provided per-skill years, e.g. "around 4
+  years with Python, and roughly 2 years with AWS").
+- The domains/industries and types of work they have done, with concrete evidence from their
+  roles (scope, responsibilities, achievements).
+- Their standout strengths, and any noticeable gaps or areas that are less developed.
+
+Ground every statement in the provided data; never invent employers, titles, dates, or
+skills. Use flowing prose in a few short paragraphs (you may finish with a brief line on
+overall fit). Do NOT output JSON, markdown headings, or code fences."""
+
+
+def candidate_summary_user(profile: Dict[str, Any], skill_years: list, total_years, today: str) -> str:
+    compact = {
+        "today": today,
+        "name": (profile.get("contact") or {}).get("name"),
+        "headline": profile.get("headline") or profile.get("current_title"),
+        "total_years_experience": total_years,
+        "per_skill_years": skill_years,  # [{skill, years, evidenced}]
+        "experience": [
+            {"title": e.get("title"), "company": e.get("company"),
+             "start": e.get("start"), "end": e.get("end"),
+             "duration_years": e.get("duration_years"),
+             "highlights": (e.get("highlights") or [])[:4]}
+            for e in (profile.get("experience") or [])[:10]
+        ],
+        "education": profile.get("education", [])[:4],
+        "certifications": profile.get("certifications", [])[:8],
+        "strengths": profile.get("strengths", [])[:8],
+    }
+    return (
+        "CANDIDATE DATA (JSON):\n"
+        + json.dumps(compact, ensure_ascii=False, indent=2, default=str)
+        + "\n\nWrite the candidate briefing now."
     )

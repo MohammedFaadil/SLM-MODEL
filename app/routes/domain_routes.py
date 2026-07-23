@@ -20,8 +20,10 @@ from ..config import settings
 from ..domain.job_service import create_job
 from ..domain.matching_service import match_candidate
 from ..domain.resume_service import parse_resume
+from ..domain.summary_service import candidate_summary
 from ..domain.schemas import (
     CandidateProfile,
+    CandidateSummary,
     JobCreateRequest,
     JobSpec,
     MatchResult,
@@ -100,6 +102,12 @@ async def resume_parse_text(body: TextIn) -> CandidateProfile:
     profile = await parse_resume(body.text)
     await run_in_threadpool(repo.save_candidate, profile)
     return profile
+
+
+@router.post("/candidate/summary", response_model=CandidateSummary)
+async def candidate_summary_endpoint(body: CandidateProfile) -> CandidateSummary:
+    """On-demand comprehensive summary: narrative + accurate per-skill years."""
+    return await candidate_summary(body)
 
 
 # --------------------------------------------------------------------------- #
