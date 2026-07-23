@@ -147,22 +147,9 @@ persistence never blocks the API.
 | Keep model warm | `OLLAMA_KEEP_ALIVE=-1` (set by `setup_ollama_gpu.ps1`) | no reload latency |
 | Concurrency | `OLLAMA_NUM_PARALLEL` | parallel requests from the product |
 | Warmup | `WARMUP_ON_START=true` | first request isn't a cold load |
-| **FP8 quantization** (vLLM) | `--quantization fp8` (default in compose/RunPod) | **~2x faster decode + half VRAM** on RTX 4090 / L40S / H100 (Ada/Hopper) |
-| **Reasoning off** | `DOMAIN_REASONING=false` (default) | far fewer tokens per answer — the biggest latency win |
-| Concurrency (vLLM) | `--max-num-seqs 24` / `MAX_NUM_SEQS` | more candidates processed in parallel |
-| Thinking mode | `ENABLE_THINKING=true` / `DOMAIN_REASONING=true` | more thorough but ~2-3x slower |
+| Thinking mode | `ENABLE_THINKING=true` | deeper reasoning on hard matches (slower) |
 | GPU OCR | `OCR_USE_GPU=true` + paddlepaddle-gpu | faster OCR for bulk resume volumes |
 | Gateway workers | `run_production.ps1 -Workers 2` | more HTTP concurrency (rarely the bottleneck) |
-
-**Fastest config (e.g. RTX 4090):** FP8 + reasoning off are the defaults now, and
-the app runs independent LLM calls concurrently (job fields ‖ description; job ‖
-resume in the one-shot). Keep `MODEL_NAME=Qwen/Qwen3-8B` and let `--quantization fp8`
-do the work; raise `--max-num-seqs` for more concurrent candidates (needs VRAM).
-
-**Fast LOCAL testing (built-in / small GPU via Ollama):** if 8B is slow on a modest
-GPU, use the 4B model — `MODEL_NAME=qwen3:4b` (`ollama pull qwen3:4b`) — for quick
-iteration, and set `OLLAMA_KEEP_ALIVE=-1` so the model stays in VRAM. Switch back to
-`qwen3:8b` / vLLM-FP8 for the real GPU box.
 
 **GPU OCR:** install a CUDA-matched `paddlepaddle-gpu` (see
 `requirements-ocr-gpu.txt`), then set `OCR_USE_GPU=true`. Worth it if you process
