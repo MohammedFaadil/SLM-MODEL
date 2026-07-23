@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import datetime as _dt
 
-from ..config import settings
 from ..logging_conf import get_logger
 from .experience import annotate_durations, skill_experience, total_years
 from .llm_client import chat_text
@@ -46,8 +45,9 @@ async def candidate_summary(profile: CandidateProfile) -> CandidateSummary:
             CANDIDATE_SUMMARY_SYSTEM,
             candidate_summary_user(profile.model_dump(), skill_years_payload, total, today),
             temperature=0.35,
-            max_tokens=1600,
-            think=settings.domain_reasoning,
+            # Comprehensive multi-paragraph briefing: reasoning ON + large budget.
+            max_tokens=3000,
+            think=True,
         )
         summary_text = summary_text.strip()
     except Exception as exc:  # noqa: BLE001

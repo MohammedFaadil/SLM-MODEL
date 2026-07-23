@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from ..config import settings
 from ..logging_conf import get_logger
 from .experience import skill_experience
 from .llm_client import chat_text
@@ -140,8 +139,9 @@ async def match_candidate(
                 MATCH_JUSTIFY_SYSTEM,
                 match_justify_user(facts),
                 temperature=0.3,
-                max_tokens=1600,
-                think=settings.domain_reasoning,
+                # Detailed multi-paragraph recommendation: reasoning ON.
+                max_tokens=2200,
+                think=True,
             )
             text = text.strip()
             if len(text) >= 40:

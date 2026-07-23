@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from ..config import settings
 from ..logging_conf import get_logger
 from .llm_client import chat_json, chat_text
 from .prompts import (
@@ -128,9 +127,10 @@ async def create_job(req: JobCreateRequest) -> JobSpec:
             JOB_DESCRIPTION_SYSTEM,
             job_description_user(payload, fields),
             temperature=0.5,
-            # Generous: with reasoning on, thinking tokens precede the JD itself.
-            max_tokens=2800,
-            think=settings.domain_reasoning,
+            # Detailed, multi-section JD: reasoning ON + generous budget (covers a
+            # ~2-page description plus the model's hidden reasoning tokens).
+            max_tokens=4096,
+            think=True,
         )
     except Exception as exc:  # noqa: BLE001
         log.warning("Job description generation failed (%s).", exc)

@@ -52,6 +52,22 @@ def test_overlapping_roles_not_double_counted():
     assert skill_experience(prof)[0].years == 3.0
 
 
+def test_education_role_excluded_but_internship_counts():
+    prof = CandidateProfile(
+        skills=["python"],
+        experience=[
+            ExperienceItem(title="Software Engineer", start="Jan 2021", end="Dec 2022",
+                           skills=["python"]),                       # 2y job
+            ExperienceItem(title="Software Engineering Intern", start="Jan 2020",
+                           end="Dec 2020", skills=["python"]),       # 1y internship (counts)
+            ExperienceItem(title="B.Tech Computer Science", start="Jan 2016",
+                           end="Dec 2019", skills=["python"]),       # degree (excluded)
+        ],
+    )
+    assert total_years(prof.experience) == 3.0          # 2y job + 1y internship, not the degree
+    assert skill_experience(prof)[0].years == 3.0
+
+
 def test_skill_evidenced_from_highlights_when_role_skills_missing():
     prof = CandidateProfile(
         skills=["kubernetes"],

@@ -9,7 +9,6 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional
 
-from ..config import settings
 from ..logging_conf import get_logger
 from .llm_client import chat_json, chat_text
 from .prompts import (
@@ -182,8 +181,8 @@ async def parse_resume(text: str) -> CandidateProfile:
             RESUME_SUMMARY_SYSTEM,
             resume_summary_user(profile.model_dump(), text),
             temperature=0.35,
-            max_tokens=1200,
-            think=settings.domain_reasoning,
+            max_tokens=1600,
+            think=True,
         )
         summary = summary.strip()
         # Guard against the model refusing / returning a stub.
