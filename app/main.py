@@ -47,7 +47,8 @@ async def _warmup() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    log.info("SLM Gateway starting")
+    log.info("SLM Gateway starting  version=%s", __version__)
+    log.info("  domain output = DETAILED (reasoning forced on for JD/summary/justification)")
     log.info("  backend=%s  model=%s", settings.llm_backend, settings.model_name)
     log.info("  upstream=%s", settings.upstream_base_url)
     log.info("  embeddings=%s (%s)", settings.embeddings_mode, settings.embedding_model)

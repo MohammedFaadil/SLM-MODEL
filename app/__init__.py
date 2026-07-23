@@ -2,4 +2,4 @@
 PaddleOCR resume pipeline and recruiting-domain helpers (job creation,
 candidate summaries, job↔candidate matching)."""
 
-__version__ = "0.2.0"
+__version__ = "0.3.0-detailed"
