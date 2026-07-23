@@ -9,9 +9,15 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional
 
+from ..config import settings
 from ..logging_conf import get_logger
-from .llm_client import chat_json
-from .prompts import RESUME_PARSE_SYSTEM, resume_parse_user
+from .llm_client import chat_json, chat_text
+from .prompts import (
+    RESUME_PARSE_SYSTEM,
+    RESUME_SUMMARY_SYSTEM,
+    resume_parse_user,
+    resume_summary_user,
+)
 from .schemas import (
     CandidateProfile,
     ContactInfo,
@@ -169,9 +175,23 @@ async def parse_resume(text: str) -> CandidateProfile:
         profile.total_years_experience, det_total,
     )
 
-    # Keep parsing FAST: the short one-line summary from extraction is enough for
-    # the profile card. The detailed, comprehensive narrative is produced on
-    # demand by the AI Summary endpoint (/api/candidate/summary).
+    # Always generate a detailed recruiter assessment in a dedicated text call
+    # (richer + more reliable than squeezing it into the extraction JSON).
+    try:
+        summary = await chat_text(
+            RESUME_SUMMARY_SYSTEM,
+            resume_summary_user(profile.model_dump(), text),
+            temperature=0.35,
+            max_tokens=1200,
+            think=settings.domain_reasoning,
+        )
+        summary = summary.strip()
+        # Guard against the model refusing / returning a stub.
+        if len(summary) >= 40:
+            profile.summary = summary
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Resume summary generation failed (%s).", exc)
+
     if not profile.summary or len(profile.summary) < 20:
         profile.summary = _fallback_summary(profile)
 
