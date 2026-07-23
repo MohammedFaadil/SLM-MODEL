@@ -10,8 +10,9 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
+from ..config import settings
 from ..logging_conf import get_logger
-from .llm_client import chat_json
+from .llm_client import chat_text
 from .prompts import MATCH_JUSTIFY_SYSTEM, match_justify_user
 from .schemas import CandidateProfile, JobSpec, MatchResult, SkillMatch
 from .skills import SkillMatcher
@@ -105,27 +106,41 @@ async def match_candidate(
         additional_skills=additional[:15],
     )
 
-    # -- Justification (grounded in the computed facts) -- #
+    # -- Justification: deterministic recommendation + SLM-written explanation -- #
     justification, recommendation = _fallback_justification(result, job)
     if justify:
         facts: Dict[str, Any] = {
             "job_title": job.title,
+            "job_seniority": job.seniority,
             "overall_score": result.overall_score,
             "verdict": result.verdict,
-            "matched_required_skills": [m.skill for m in matched_skills if m.matched],
+            "skill_coverage_pct": round(skill_cov * 100),
+            "matched_required_skills": [
+                {"skill": m.skill, "evidence": m.evidence}
+                for m in matched_skills if m.matched
+            ],
             "missing_required_skills": result.missing_skills,
+            "preferred_skills_coverage_pct": round(pref_cov * 100) if job.preferred_skills else None,
             "candidate_additional_skills": result.additional_skills,
             "candidate_years_experience": cand_years,
             "required_years_experience": req_years,
             "experience_meets_requirement": exp_ok,
             "candidate_title": candidate.current_title or candidate.headline,
+            "candidate_strengths": candidate.strengths[:6],
+            "candidate_summary": (candidate.summary or "")[:700],
+            "key_responsibilities": job.responsibilities[:6],
         }
         try:
-            data = await chat_json(MATCH_JUSTIFY_SYSTEM, match_justify_user(facts), max_tokens=500)
-            if data.get("justification"):
-                justification = str(data["justification"]).strip()
-            if data.get("recommendation"):
-                recommendation = str(data["recommendation"]).strip()
+            text = await chat_text(
+                MATCH_JUSTIFY_SYSTEM,
+                match_justify_user(facts),
+                temperature=0.3,
+                max_tokens=1600,
+                think=settings.domain_reasoning,
+            )
+            text = text.strip()
+            if len(text) >= 40:
+                justification = text
         except Exception as exc:  # noqa: BLE001
             log.warning("Match justification LLM call failed (%s); using fallback.", exc)
 

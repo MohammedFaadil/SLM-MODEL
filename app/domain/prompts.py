@@ -1,30 +1,36 @@
 """Prompt templates.
 
-Engineered for an 8B model: explicit schema, "output only JSON", "do not
-invent", and grounding rules. Small models obey tight, concrete instructions far
-better than open-ended ones — that is most of the accuracy here.
+Design principles for reliable 8B output:
+  * Domain-generic wording (works for tech, sales, finance, healthcare, ...).
+  * STRUCTURED data comes back as small, strict JSON (easy to parse).
+  * LONG-FORM prose (job description, candidate summary, fit justification) is
+    generated in SEPARATE plain-text calls — never crammed inside a JSON string,
+    which is the #1 cause of broken JSON / generic fallbacks on small models.
 """
 from __future__ import annotations
 
 import json
 from typing import Any, Dict, List
 
-# --------------------------------------------------------------------------- #
-#  Resume parsing (single call: structured extraction + recruiter summary)
-# --------------------------------------------------------------------------- #
-RESUME_PARSE_SYSTEM = """You are an expert technical recruiter and resume parser.
-Extract structured data from the resume text and write a short recruiter-facing summary.
+# =========================================================================== #
+#  RESUME
+# =========================================================================== #
+# 1) Structured extraction (strict JSON, no long prose).
+RESUME_PARSE_SYSTEM = """You are an expert recruiter and resume parser for ALL industries
+(technology, sales, finance, healthcare, operations, design, etc.).
+Extract accurate structured data from the resume text.
 
 Rules:
 - Output ONLY a single valid JSON object. No markdown, no commentary, no code fences.
 - Use null for unknown scalar fields and [] for unknown lists. NEVER invent facts.
-- "skills": concise canonical skill names (e.g. "react", "python", "aws", "kubernetes").
-  Include technologies, tools, frameworks, and clear professional competencies actually
-  evidenced in the resume. Deduplicate. Aim for the 10-30 most relevant.
-- "total_years_experience": a number estimated from the work history date ranges
-  (sum of professional experience, ignoring overlaps). Use 0 if none/student.
-- "summary": A very detailed justification and analysis of the candidate's resume profile, outlining their core strengths, domains, seniority, and overall fitness as a professional. Provide a comprehensive breakdown based strictly on the resume. Do not hallucinate.
-- "strengths": 3-6 short bullet phrases capturing standout strengths.
+- "skills": concise canonical skill/tool/competency names actually evidenced in the
+  resume (e.g. "python", "salesforce", "financial modeling", "project management").
+  Deduplicate. Return the 10-30 most relevant.
+- "total_years_experience": a number estimated from the work-history date ranges
+  (sum of professional experience, ignoring overlaps). 0 if none/student.
+- "headline": one short line describing the candidate (their own title/level).
+- "strengths": 3-6 short bullet phrases capturing standout, evidence-backed strengths.
+- Keep "summary" to ONE factual sentence here (a detailed summary is written separately).
 
 JSON schema (keys and shapes to follow exactly):
 {
@@ -44,69 +50,71 @@ JSON schema (keys and shapes to follow exactly):
 }"""
 
 
-def resume_parse_user(resume_text: str, max_chars: int = 16000) -> str:
+def resume_parse_user(resume_text: str, max_chars: int = 18000) -> str:
     text = resume_text.strip()
     if len(text) > max_chars:
         text = text[:max_chars] + "\n...[truncated]"
-    return f"RESUME TEXT:\n\"\"\"\n{text}\n\"\"\"\n\nReturn the JSON object now."
+    return f'RESUME TEXT:\n"""\n{text}\n"""\n\nReturn the JSON object now.'
 
 
-# --------------------------------------------------------------------------- #
-#  Job creation / enrichment
-# --------------------------------------------------------------------------- #
-JOB_CREATE_SYSTEM = """You are a senior technical recruiter writing a precise job specification.
-Given a title, seed skills, experience level, and a user prompt with detailed job requirements, produce a complete, realistic and highly detailed job spec. Ensure the job description is comprehensive and deeply tailored based on the user's prompt.
+# 2) Detailed recruiter summary / justification (plain text, reasoning-friendly).
+RESUME_SUMMARY_SYSTEM = """You are a senior recruiter writing a candidate briefing for a hiring manager.
+Write a clear, well-structured, DETAILED assessment of the candidate based ONLY on the
+provided resume data. Cover:
+- who they are and their seniority level,
+- core strengths and the domains/functions they are strongest in,
+- notable achievements or scope (teams, scale, impact) if evidenced,
+- any obvious gaps or caveats a recruiter should note.
+
+Rules: be factual and specific, ground every claim in the resume, do NOT invent
+employers, titles, dates, or skills. No hype, no marketing language. 4-8 sentences,
+plain prose (you may use short paragraphs). Do not output JSON or bullet lists of skills."""
+
+
+def resume_summary_user(profile: Dict[str, Any], resume_text: str, max_chars: int = 8000) -> str:
+    text = resume_text.strip()
+    if len(text) > max_chars:
+        text = text[:max_chars] + "\n...[truncated]"
+    compact = {
+        "name": (profile.get("contact") or {}).get("name"),
+        "current_title": profile.get("current_title") or profile.get("headline"),
+        "total_years_experience": profile.get("total_years_experience"),
+        "skills": profile.get("skills", [])[:25],
+        "experience": [
+            {"title": e.get("title"), "company": e.get("company"),
+             "start": e.get("start"), "end": e.get("end")}
+            for e in (profile.get("experience") or [])[:8]
+        ],
+        "education": profile.get("education", [])[:4],
+    }
+    return (
+        "EXTRACTED PROFILE (JSON):\n"
+        + json.dumps(compact, ensure_ascii=False, indent=2)
+        + f'\n\nRESUME TEXT:\n"""\n{text}\n"""\n\nWrite the candidate assessment now.'
+    )
+
+
+# =========================================================================== #
+#  JOB
+# =========================================================================== #
+# 1) Structured job fields (strict JSON, no long description).
+JOB_FIELDS_SYSTEM = """You are a senior recruiter turning a request into a precise job specification.
+You are given a title, seed skills, experience level, and (often) a detailed free-text
+prompt describing the role. Produce the STRUCTURED fields of the job.
 
 Rules:
 - Output ONLY a single valid JSON object. No markdown, no commentary, no code fences.
-- Keep required_skills grounded in the provided skills plus the few technologies clearly implied by the role. Do NOT pad with unrelated skills.
-- required_skills: must-haves. preferred_skills: nice-to-haves. Canonical short names.
-- responsibilities: 5-8 concise bullet phrases. qualifications: 4-6 bullet phrases.
-- description: A highly detailed, professional job description formatted in Markdown. You MUST format the description strictly using this exact template structure, but the content inside MUST be rich, engaging, and heavily customized to the user's input. Do NOT just output a generic template. Use strong action verbs and professional recruiter tone.
-
-  # Job Description: [Job Title]
-
-  ### Job Title
-  [Job Title]
-
-  ### Location
-  [Determine Location from prompt, or use generic professional default e.g. Remote/Hybrid]
-
-  ### Employment Type
-  [Determine Employment Type from prompt, or default to Full-Time]
-
-  ### Experience
-  [Experience Level]
-
-  ## Job Summary
-  [Write a highly engaging, 3-4 sentence paragraph. Detail the core mission of the role, the impact the person will have, and why the company/team is a great place to work, directly leveraging the user's prompt.]
-
-  ## Key Responsibilities
-  [Write 6-8 comprehensive bullet points using strong action verbs (e.g., Design, Architect, Lead, Develop). Tailor these explicitly to the skills and requirements mentioned in the prompt.]
-  * ...
-  * ...
-
-  ## Required Skills
-  [List 5-8 must-have technical and soft skills as bullet points, matching the role's core needs.]
-  * ...
-
-  ## Preferred Skills
-  [List 3-5 nice-to-have skills, tools, or methodologies.]
-  * ...
-
-  ## Qualifications
-  [List 3-5 bullet points covering educational background, years of experience, and specific achievements or domain knowledge required.]
-  * ...
-
-  ## Benefits
-  [List 5-6 attractive, modern employee benefits tailored to the role's seniority and typical industry standards.]
-  * ...
-
-- Preserve the given min_years_experience and seniority if provided.
+- Ground required_skills in the provided skills PLUS skills clearly implied by the title
+  and the prompt. Do NOT pad with unrelated skills.
+- required_skills = must-haves; preferred_skills = nice-to-haves. Canonical short names.
+- responsibilities: 6-8 concise, specific bullet phrases tailored to the prompt.
+- qualifications: 4-6 concise bullet phrases (education, experience, domain knowledge).
+- Honor the given seniority / min_years_experience / location / employment_type if present;
+  otherwise infer sensible values from the prompt (or null).
+- Do NOT write the long job description here — that is generated separately.
 
 JSON schema:
 {
-  "title": str,
   "seniority": str|null,
   "min_years_experience": number|null,
   "required_skills": [str],
@@ -114,37 +122,103 @@ JSON schema:
   "responsibilities": [str],
   "qualifications": [str],
   "location": str|null,
-  "employment_type": str|null,
-  "description": str
+  "employment_type": str|null
 }"""
 
 
-def job_create_user(payload: Dict[str, Any]) -> str:
+def job_fields_user(payload: Dict[str, Any]) -> str:
     return (
-        "JOB INPUT (JSON):\n"
+        "JOB REQUEST (JSON):\n"
         + json.dumps(payload, ensure_ascii=False, indent=2)
-        + "\n\nReturn the completed job-spec JSON object now."
+        + "\n\nReturn the structured job-fields JSON object now."
     )
 
 
-# --------------------------------------------------------------------------- #
-#  Match justification (grounded in pre-computed facts)
-# --------------------------------------------------------------------------- #
-MATCH_JUSTIFY_SYSTEM = """You are a technical recruiter explaining a candidate-job fit to a hiring manager.
-You are given FACTS already computed by a matching engine. Your job is ONLY to explain them.
+# 2) Rich Markdown job description (plain text, reasoning-friendly).
+JOB_DESCRIPTION_SYSTEM = """You are a senior recruiter writing a polished, engaging job description.
+Use the provided title, requirements prompt, and structured fields to write a rich,
+professional description in Markdown. Heavily customize the content to the specific role
+and the user's prompt — do NOT produce a generic template. Use a confident recruiter tone
+and strong action verbs. Ground everything in the provided inputs; do not contradict them.
 
-Rules:
-- Output ONLY a valid JSON object: {"justification": str, "recommendation": str}.
-- Base everything strictly on the provided FACTS. Do NOT invent skills or experience.
-- justification: Provide a highly detailed explanation and justification of the candidate's fit for the role. State overall fit, thoroughly analyze the matched and missing skills, and evaluate their experience fit in depth. Ensure the explanation is detailed and provides concrete reasoning for the match score.
-- recommendation: one short line, e.g. "Strong fit — advance to technical interview",
-  "Possible fit — screen for <gap>", or "Not a fit for this role".
-"""
+Output ONLY Markdown (no JSON, no code fences) using EXACTLY this structure:
+
+# Job Description: [Job Title]
+
+### Job Title
+[Job Title]
+
+### Location
+[from inputs, else "Remote / Hybrid"]
+
+### Employment Type
+[from inputs, else "Full-Time"]
+
+### Experience
+[experience level / years]
+
+## Job Summary
+[3-4 engaging sentences: the mission of the role, the impact this person will have, and
+why it's a compelling opportunity — grounded in the prompt.]
+
+## Key Responsibilities
+[6-8 comprehensive bullets with strong action verbs, tailored to the role.]
+
+## Required Skills
+[the must-have skills as bullets]
+
+## Preferred Skills
+[nice-to-have skills as bullets]
+
+## Qualifications
+[education, years of experience, domain knowledge as bullets]
+
+## Benefits
+[5-6 attractive, role-appropriate benefits]"""
+
+
+def job_description_user(payload: Dict[str, Any], fields: Dict[str, Any]) -> str:
+    merged = {
+        "title": payload.get("title"),
+        "seniority": fields.get("seniority") or payload.get("seniority"),
+        "min_years_experience": fields.get("min_years_experience") or payload.get("min_years_experience"),
+        "location": fields.get("location") or payload.get("location"),
+        "employment_type": fields.get("employment_type") or payload.get("employment_type"),
+        "required_skills": fields.get("required_skills") or payload.get("skills"),
+        "preferred_skills": fields.get("preferred_skills"),
+        "responsibilities": fields.get("responsibilities"),
+        "qualifications": fields.get("qualifications"),
+        "requirements_prompt": payload.get("prompt") or payload.get("notes"),
+    }
+    return (
+        "JOB INPUTS (JSON):\n"
+        + json.dumps(merged, ensure_ascii=False, indent=2)
+        + "\n\nWrite the Markdown job description now."
+    )
+
+
+# =========================================================================== #
+#  MATCH JUSTIFICATION (plain text, grounded in pre-computed facts)
+# =========================================================================== #
+MATCH_JUSTIFY_SYSTEM = """You are a recruiter explaining a candidate-vs-job fit to a hiring manager.
+You are given FACTS already computed by a matching engine (skill matches/gaps, experience,
+scores, candidate strengths). Explain the fit clearly and honestly.
+
+Write a DETAILED, well-reasoned justification that:
+- opens with the overall verdict and why (reference the score),
+- names the strongest matched requirements and what evidence supports them,
+- calls out the most important missing/weak requirements and how much they matter,
+- assesses the experience-level fit,
+- ends with a clear hiring-manager takeaway: should they proceed, and why / why not.
+
+Rules: base EVERYTHING strictly on the provided FACTS — do NOT invent skills, employers,
+or experience. Match the tone to the score (never oversell a weak match). 4-7 sentences,
+plain prose. Do NOT output JSON."""
 
 
 def match_justify_user(facts: Dict[str, Any]) -> str:
     return (
         "FACTS (JSON):\n"
-        + json.dumps(facts, ensure_ascii=False, indent=2)
-        + "\n\nReturn the JSON object now."
+        + json.dumps(facts, ensure_ascii=False, indent=2, default=str)
+        + "\n\nWrite the fit justification now."
     )

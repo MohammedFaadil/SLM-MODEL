@@ -9,9 +9,15 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional
 
+from ..config import settings
 from ..logging_conf import get_logger
 from .llm_client import chat_json, chat_text
-from .prompts import RESUME_PARSE_SYSTEM, resume_parse_user
+from .prompts import (
+    RESUME_PARSE_SYSTEM,
+    RESUME_SUMMARY_SYSTEM,
+    resume_parse_user,
+    resume_summary_user,
+)
 from .schemas import (
     CandidateProfile,
     ContactInfo,
@@ -144,17 +150,24 @@ async def parse_resume(text: str) -> CandidateProfile:
     profile = _profile_from_llm(data) if data else CandidateProfile()
     _fill_heuristics(profile, text)
 
-    if not profile.summary:
-        # Try a short dedicated summary call; fall back to a heuristic sentence.
-        try:
-            summary = await chat_text(
-                "You are a technical recruiter. Write a factual 3-4 sentence "
-                "recruiter-facing summary of this candidate. No hype, no invented facts.",
-                f"CANDIDATE SKILLS: {', '.join(profile.skills[:20])}\n\nRESUME:\n{text[:6000]}",
-                max_tokens=280,
-            )
-            profile.summary = summary.strip() or _fallback_summary(profile)
-        except Exception:  # noqa: BLE001
-            profile.summary = _fallback_summary(profile)
+    # Always generate a detailed recruiter assessment in a dedicated text call
+    # (richer + more reliable than squeezing it into the extraction JSON).
+    try:
+        summary = await chat_text(
+            RESUME_SUMMARY_SYSTEM,
+            resume_summary_user(profile.model_dump(), text),
+            temperature=0.35,
+            max_tokens=1200,
+            think=settings.domain_reasoning,
+        )
+        summary = summary.strip()
+        # Guard against the model refusing / returning a stub.
+        if len(summary) >= 40:
+            profile.summary = summary
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Resume summary generation failed (%s).", exc)
+
+    if not profile.summary or len(profile.summary) < 20:
+        profile.summary = _fallback_summary(profile)
 
     return profile

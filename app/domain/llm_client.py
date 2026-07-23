@@ -22,10 +22,19 @@ _THINK_BLOCK = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 _FENCE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL)
 
 
-def _apply_thinking(messages: List[Dict[str, Any]], payload: Dict[str, Any]) -> None:
-    if settings.enable_thinking:
+def _apply_thinking(
+    messages: List[Dict[str, Any]], payload: Dict[str, Any], think: Optional[bool]
+) -> None:
+    """Enable/disable Qwen3 reasoning for this call.
+
+    think=None -> fall back to the global ENABLE_THINKING default.
+    """
+    if think is None:
+        think = settings.enable_thinking
+    if think:
+        # vLLM honours chat_template_kwargs; Ollama/Qwen3 think by default.
+        payload["chat_template_kwargs"] = {"enable_thinking": True}
         return
-    # vLLM honours chat_template_kwargs; Ollama ignores it harmlessly.
     payload["chat_template_kwargs"] = {"enable_thinking": False}
     # Ollama/Qwen3 honour the /no_think directive in the prompt.
     if messages and messages[0].get("role") == "system":
@@ -81,6 +90,7 @@ async def chat_text(
     *,
     temperature: float = 0.3,
     max_tokens: int = 800,
+    think: Optional[bool] = None,
 ) -> str:
     messages = [
         {"role": "system", "content": system},
@@ -93,7 +103,7 @@ async def chat_text(
         "max_tokens": max_tokens,
         "stream": False,
     }
-    _apply_thinking(messages, payload)
+    _apply_thinking(messages, payload, think)
     resp = await get_backend().chat_completion(payload)
     content = resp.get("choices", [{}])[0].get("message", {}).get("content", "")
     return strip_reasoning(content)
@@ -105,7 +115,9 @@ async def chat_json(
     *,
     temperature: float = 0.1,
     max_tokens: int = 1600,
+    think: Optional[bool] = None,
 ) -> Dict[str, Any]:
+    # Default JSON calls to NON-thinking: cleaner, guaranteed-parseable output.
     messages = [
         {"role": "system", "content": system},
         {"role": "user", "content": user},
@@ -118,7 +130,7 @@ async def chat_json(
         "stream": False,
         "response_format": {"type": "json_object"},
     }
-    _apply_thinking(messages, payload)
+    _apply_thinking(messages, payload, False if think is None else think)
     resp = await get_backend().chat_completion(payload)
     content = resp.get("choices", [{}])[0].get("message", {}).get("content", "")
     return extract_json(content)

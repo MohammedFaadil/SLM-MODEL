@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     served_model_id: str = "slm-qwen3-8b"
     force_model: bool = True
     enable_thinking: bool = False
+    # Use Qwen3 reasoning for the long-form domain tasks (job description,
+    # candidate summary, fit justification). Big accuracy boost on GPU; set false
+    # on a CPU-only box (it's much slower there).
+    domain_reasoning: bool = True
     request_timeout: float = 600.0
 
     # ---- Embeddings ----

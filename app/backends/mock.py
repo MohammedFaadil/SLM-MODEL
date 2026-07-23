@@ -40,7 +40,7 @@ class MockBackend(LLMBackend):
     def _content_for(self, payload: Dict[str, Any]) -> str:
         if _wants_json(payload):
             text = _last_user_text(payload)
-            if "JOB INPUT" in text:
+            if "JOB INPUT" in text or "JOB REQUEST" in text:
                 import json
                 mock_jd = {
                     "title": "Software Developer",
