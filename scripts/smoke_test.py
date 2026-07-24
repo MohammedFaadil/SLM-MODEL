@@ -68,9 +68,14 @@ def main() -> int:
         text = "".join(line for line in s.iter_lines())
     check("POST /v1/completions (stream)", "data:" in text and "[DONE]" in text)
 
-    print("\n== embeddings (off -> degrades cleanly) ==")
+    print("\n== embeddings (EMBEDDINGS_MODE=off -> 404 disabled) ==")
     r = client.post("/v1/embeddings", json={"model": "x", "input": "hello"})
-    check("POST /v1/embeddings", r.status_code in (200, 501), str(r.status_code))
+    check("POST /v1/embeddings", r.status_code in (200, 404, 501), str(r.status_code))
+
+    print("\n== malformed JSON -> 400 ==")
+    r = client.post("/v1/chat/completions", content=b"{not json",
+                    headers={"Content-Type": "application/json"})
+    check("malformed body returns 400", r.status_code == 400, str(r.status_code))
 
     print("\n== ocr endpoint ==")
     r = client.post("/api/ocr/parse",

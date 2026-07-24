@@ -58,7 +58,8 @@ async def lifespan(app: FastAPI):
     await run_in_threadpool(db.init)
 
     if settings.warmup_on_start:
-        asyncio.create_task(_warmup())  # non-blocking: service is up immediately
+        # keep a strong reference so the task isn't GC'd while suspended
+        app.state.warmup_task = asyncio.create_task(_warmup())
 
     yield
 

@@ -6,6 +6,7 @@ the single credential you rotate — no code change on the platform side.
 """
 from __future__ import annotations
 
+import hmac
 from typing import Optional
 
 from fastapi import Header, HTTPException, status
@@ -32,7 +33,8 @@ async def require_api_key(
     if not settings.auth_required:
         return
     key = _extract_key(authorization, x_api_key)
-    if key is None or key not in settings.api_key_list:
+    # constant-time comparison to avoid a timing side-channel on the gateway key
+    if key is None or not any(hmac.compare_digest(key, k) for k in settings.api_key_list):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={

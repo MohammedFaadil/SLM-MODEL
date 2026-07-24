@@ -49,6 +49,9 @@ async def ocr_parse(file: UploadFile = File(...)) -> dict:
     try:
         # OCR/PDF work is blocking + CPU-heavy -> run off the event loop.
         extraction = await run_in_threadpool(extract_any, file.filename or "upload.pdf", data)
-    except Exception as exc:  # noqa: BLE001
+    except (RuntimeError, MemoryError, ImportError) as exc:  # engine/resource fault
+        log.error("OCR engine unavailable: %s", exc)
+        raise HTTPException(status_code=503, detail="OCR engine unavailable.")
+    except Exception as exc:  # noqa: BLE001 - the client's document is unreadable
         raise HTTPException(status_code=422, detail=f"Could not parse document: {exc}")
     return extraction.to_dict()

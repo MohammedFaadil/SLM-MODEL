@@ -105,6 +105,12 @@ class OpenAIUpstreamBackend(LLMBackend):
                 status_code=504,
                 err_type="backend_timeout",
             ) from exc
+        except httpx.HTTPError as exc:  # RemoteProtocolError, ReadError, mid-stream reset
+            raise BackendError(
+                f"Model backend stream failed ({exc}).",
+                status_code=502,
+                err_type="upstream_error",
+            ) from exc
 
     def chat_completion_stream(self, payload: Dict[str, Any]) -> AsyncIterator[bytes]:
         return self._stream("/chat/completions", payload)

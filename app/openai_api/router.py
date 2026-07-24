@@ -33,6 +33,21 @@ router = APIRouter(prefix="/v1", tags=["openai"])
 _SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
 
 
+async def _read_json(request: Request) -> Dict[str, Any]:
+    try:
+        data = await request.json()
+    except Exception as exc:  # noqa: BLE001 - malformed body
+        raise BackendError(
+            f"Invalid JSON body: {exc}", status_code=400, err_type="invalid_request_error"
+        ) from exc
+    if not isinstance(data, dict):
+        raise BackendError(
+            "Request body must be a JSON object.", status_code=400,
+            err_type="invalid_request_error",
+        )
+    return data
+
+
 def _normalize_model(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Route every request to the configured model, touching ONLY the model field.
 
@@ -59,9 +74,9 @@ async def _sse_response(gen: AsyncIterator[bytes]) -> StreamingResponse:
     """Stream an upstream SSE byte stream to the client.
 
     The generator is PRIMED here so a pre-token upstream error (bad params, unknown
-    model, 401/429, unreachable) raises BackendError before the response starts —
-    the app handler then returns the real HTTP status + OpenAI error body, instead of
-    a misleading 200. Genuine mid-stream failures become a clean terminal SSE error.
+    model, 401/429, unreachable) raises BackendError before the response starts — the
+    app handler then returns the real HTTP status + OpenAI error body instead of a
+    misleading 200. Any mid-stream failure becomes a clean terminal SSE error event.
     """
     it = gen.__aiter__()
     try:
@@ -79,25 +94,27 @@ async def _sse_response(gen: AsyncIterator[bytes]) -> StreamingResponse:
                 yield chunk
         except BackendError as exc:
             yield _sse_error(exc)
+        except Exception as exc:  # noqa: BLE001 - never leak into the ASGI body
+            yield _sse_error(BackendError(f"Model backend stream failed ({exc}).", 502))
 
     return StreamingResponse(body(), media_type="text/event-stream", headers=_SSE_HEADERS)
 
 
 @router.post("/chat/completions", dependencies=[Depends(require_api_key)])
 async def chat_completions(request: Request) -> Any:
-    payload = _normalize_model(await request.json())
+    payload = _normalize_model(await _read_json(request))
     backend = get_backend()
     if payload.get("stream"):
         return await _sse_response(backend.chat_completion_stream(payload))
     data = await backend.chat_completion(payload)
     if isinstance(data, dict):
-        data["model"] = settings.served_model_id  # advertise our public id
+        data["model"] = settings.served_model_id  # advertise our public id (matches /v1/models)
     return JSONResponse(data)
 
 
 @router.post("/completions", dependencies=[Depends(require_api_key)])
 async def completions(request: Request) -> Any:
-    payload = _normalize_model(await request.json())
+    payload = _normalize_model(await _read_json(request))
     backend = get_backend()
     if payload.get("stream"):
         return await _sse_response(backend.completion_stream(payload))
@@ -109,25 +126,36 @@ async def completions(request: Request) -> Any:
 
 @router.post("/embeddings", dependencies=[Depends(require_api_key)])
 async def embeddings(request: Request) -> Any:
-    raw = await request.json()
+    raw = await _read_json(request)
     backend = get_backend()
 
-    # Prefer local sentence-transformers unless explicitly set to upstream.
+    if settings.embeddings_mode == "off":
+        raise BackendError("Embeddings are disabled on this gateway.",
+                           status_code=404, err_type="not_found")
     if settings.embeddings_mode == "upstream":
         return JSONResponse(await backend.embeddings(_normalize_model(raw)))
+
+    # Validate optional OpenAI params (real OpenAI returns 400 on bad values).
+    enc = raw.get("encoding_format") or "float"
+    if enc not in ("float", "base64"):
+        raise BackendError("encoding_format must be 'float' or 'base64'.",
+                           status_code=400, err_type="invalid_request_error")
+    dims = raw.get("dimensions")
+    if dims is not None and (not isinstance(dims, int) or dims <= 0):
+        raise BackendError("dimensions must be a positive integer.",
+                           status_code=400, err_type="invalid_request_error")
 
     try:
         from ..embeddings.embedder import get_embedder
 
-        embedder = get_embedder()
-        data = embedder.openai_response(
-            raw.get("input"),
-            model=settings.embedding_model,
-            encoding_format=raw.get("encoding_format") or "float",
-            dimensions=raw.get("dimensions"),
+        data = get_embedder().openai_response(
+            raw.get("input"), model=settings.embedding_model,
+            encoding_format=enc, dimensions=dims,
         )
         return JSONResponse(data)
-    except Exception as exc:  # noqa: BLE001
+    except BackendError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - local embedder unavailable
         log.warning("Local embeddings unavailable (%s); trying upstream.", exc)
         try:
             return JSONResponse(await backend.embeddings(_normalize_model(raw)))

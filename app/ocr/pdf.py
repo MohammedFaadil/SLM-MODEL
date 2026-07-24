@@ -3,7 +3,7 @@
 Strategy:
   1. Try fast, exact native-text extraction (PyMuPDF, then pdfplumber).
   2. For any page that yields little/no text (scanned or image-only), rasterize
-     it at OCR_DPI and run PaddleOCR (PP-OCRv5).
+     it at a bounded DPI and run PaddleOCR (PP-OCRv5).
 Perfect text on digital PDFs, OCR only where needed — best accuracy at lowest cost.
 """
 from __future__ import annotations
@@ -12,6 +12,7 @@ import io
 from dataclasses import asdict, dataclass, field
 from typing import List, Optional
 
+# pyrefly: ignore [missing-import]
 import fitz  # PyMuPDF
 
 from ..config import settings
@@ -21,7 +22,7 @@ log = get_logger(__name__)
 
 # A page with fewer than this many chars of native text is treated as "needs OCR".
 _NATIVE_MIN_CHARS = 40
-# Clamp the rasterized long edge so a huge/high-DPI page can't blow up memory.
+# Bound the rasterized long edge (pixels) so a huge/high-DPI page can't OOM.
 _MAX_PIXELS_EDGE = 4000
 
 
@@ -37,8 +38,9 @@ class PageResult:
 @dataclass
 class PdfExtraction:
     text: str
-    num_pages: int
-    status: str = "ok"  # ok | partial | no_text
+    num_pages: int                        # pages actually processed
+    total_pages: int = 0                  # pages in the document (>= num_pages if capped)
+    status: str = "ok"                    # ok | partial | no_text
     overall_confidence: Optional[float] = None
     pages: List[PageResult] = field(default_factory=list)
 
@@ -53,6 +55,7 @@ class PdfExtraction:
         return {
             "text": self.text,
             "num_pages": self.num_pages,
+            "total_pages": self.total_pages or self.num_pages,
             "status": self.status,
             "overall_confidence": self.overall_confidence,
             "method_summary": self.method_summary,
@@ -60,7 +63,7 @@ class PdfExtraction:
         }
 
 
-def _finalize(pages: List[PageResult]) -> PdfExtraction:
+def _finalize(pages: List[PageResult], total_pages: Optional[int] = None) -> PdfExtraction:
     full = "\n\n".join(p.text for p in pages if p.text.strip()).strip()
     confs = [p.confidence for p in pages if p.confidence is not None]
     overall = round(sum(confs) / len(confs), 4) if confs else None
@@ -70,20 +73,45 @@ def _finalize(pages: List[PageResult]) -> PdfExtraction:
         status = "partial"
     else:
         status = "ok"
-    return PdfExtraction(text=full, num_pages=len(pages), status=status,
-                         overall_confidence=overall, pages=pages)
+    return PdfExtraction(text=full, num_pages=len(pages),
+                         total_pages=total_pages if total_pages is not None else len(pages),
+                         status=status, overall_confidence=overall, pages=pages)
 
 
-def _pdfplumber_page_text(data: bytes, page_index: int) -> str:
-    try:
-        import pdfplumber
+class _Pdfplumber:
+    """Open pdfplumber ONCE and reuse pages (avoids O(n^2) re-parsing per page)."""
 
-        with pdfplumber.open(io.BytesIO(data)) as pdf:
-            if page_index < len(pdf.pages):
-                return pdf.pages[page_index].extract_text() or ""
-    except Exception as exc:  # noqa: BLE001
-        log.debug("pdfplumber failed on page %d: %s", page_index, exc)
-    return ""
+    def __init__(self, data: bytes) -> None:
+        self._data = data
+        self._pdf = None
+        self._opened = False
+
+    def page_text(self, i: int) -> str:
+        if not self._opened:
+            self._opened = True
+            try:
+                # pyrefly: ignore [missing-import]
+                import pdfplumber
+
+                self._pdf = pdfplumber.open(io.BytesIO(self._data))
+            except Exception as exc:  # noqa: BLE001
+                log.debug("pdfplumber open failed: %s", exc)
+                self._pdf = None
+        if self._pdf is None:
+            return ""
+        try:
+            if i < len(self._pdf.pages):
+                return self._pdf.pages[i].extract_text() or ""
+        except Exception as exc:  # noqa: BLE001
+            log.debug("pdfplumber page %d failed: %s", i, exc)
+        return ""
+
+    def close(self) -> None:
+        if self._pdf is not None:
+            try:
+                self._pdf.close()
+            except Exception:  # noqa: BLE001
+                pass
 
 
 def _ocr_page(page: "fitz.Page", dpi: int) -> tuple[str, float]:
@@ -91,12 +119,13 @@ def _ocr_page(page: "fitz.Page", dpi: int) -> tuple[str, float]:
 
     from .paddle import get_ocr_engine
 
-    # Force RGB so grayscale/CMYK pages don't crash the reshape.
-    pix = page.get_pixmap(dpi=dpi, colorspace=fitz.csRGB, alpha=False)
-    if max(pix.width, pix.height) > _MAX_PIXELS_EDGE and dpi > 72:
-        scale = _MAX_PIXELS_EDGE / max(pix.width, pix.height)
-        pix = page.get_pixmap(dpi=max(72, int(dpi * scale)),
-                              colorspace=fitz.csRGB, alpha=False)
+    # Bound the render BEFORE rasterizing: compute an effective DPI so the long edge
+    # is ~<= _MAX_PIXELS_EDGE, so we never allocate a giant pixmap first.
+    long_in = max(page.rect.width, page.rect.height) / 72.0  # page long edge in inches
+    eff = min(dpi, int(_MAX_PIXELS_EDGE / long_in)) if long_in > 0 else dpi
+    eff = max(36, eff)
+    # Force RGB so grayscale/CMYK pages don't break the reshape.
+    pix = page.get_pixmap(dpi=eff, colorspace=fitz.csRGB, alpha=False)
     img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, 3)
     return get_ocr_engine().ocr_image(img)
 
@@ -118,18 +147,20 @@ def extract_pdf(
         doc.close()
         raise ValueError("PDF is password-protected / encrypted.")
 
+    total_pages = doc.page_count
+    plumber = _Pdfplumber(data)
     pages: List[PageResult] = []
     try:
         for i, page in enumerate(doc):
             if i >= max_pages:
-                log.info("Stopping at OCR_MAX_PAGES=%d (document has %d).", max_pages, doc.page_count)
+                log.info("Stopping at OCR_MAX_PAGES=%d (document has %d).", max_pages, total_pages)
                 break
 
             native_text = ""
             if prefer_native:
                 native_text = (page.get_text("text") or "").strip()
                 if len(native_text) < _NATIVE_MIN_CHARS:
-                    alt = _pdfplumber_page_text(data, i).strip()
+                    alt = plumber.page_text(i).strip()
                     if len(alt) > len(native_text):
                         native_text = alt
 
@@ -153,14 +184,16 @@ def extract_pdf(
             pages.append(PageResult(page=i + 1, method="native" if native_text else "empty",
                                     char_count=len(native_text), text=native_text))
     finally:
+        plumber.close()
         doc.close()
 
-    return _finalize(pages)
+    return _finalize(pages, total_pages=total_pages)
 
 
 def extract_image(data: bytes) -> PdfExtraction:
     """OCR a single image (png/jpg/...)."""
     import numpy as np
+    # pyrefly: ignore [missing-import]
     from PIL import Image
 
     from .paddle import get_ocr_engine
@@ -176,7 +209,7 @@ def extract_image(data: bytes) -> PdfExtraction:
 
 
 def _looks_like_pdf(data: bytes) -> bool:
-    return data[:5].lstrip().startswith(b"%PDF")
+    return b"%PDF" in data[:1024]
 
 
 def extract_any(filename: str, data: bytes) -> PdfExtraction:
