@@ -47,6 +47,10 @@ class LLMBackend(abc.ABC):
         """Non-streaming legacy completion."""
 
     @abc.abstractmethod
+    def completion_stream(self, payload: Dict[str, Any]) -> AsyncIterator[bytes]:
+        """Streaming legacy completion -> raw SSE byte chunks."""
+
+    @abc.abstractmethod
     async def embeddings(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """Embeddings via the upstream engine (may be unsupported)."""
 

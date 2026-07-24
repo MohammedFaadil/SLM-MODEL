@@ -1,14 +1,12 @@
-# Test UI (disposable — do not ship)
+# Test UI (dev tool — not part of the product)
 
-This folder is a **testing harness only**. It is listed in `.gitignore` so it
-never lands in the main product. Delete it any time.
+A tiny Streamlit harness to eyeball the gateway on a GPU box. Two testers:
 
-It talks to the gateway over HTTP exactly like your real platform would, so it's
-a faithful way to eyeball SLM quality for the three flows:
+1. **Chat** → `POST /v1/chat/completions` (the OpenAI surface the product uses)
+2. **OCR** → `POST /api/ocr/parse` (PDF/image → text)
 
-1. **AI Job Creation** — title + skills + experience → full job spec
-2. **Add Candidate** — resume PDF/image → PaddleOCR → structured profile + AI summary
-3. **Job ↔ Candidate Match** — matched/missing skills + AI justification
+The gateway itself ships **no prompts** — the product supplies those. This UI just
+sends a raw chat request and an OCR upload.
 
 ## Run
 

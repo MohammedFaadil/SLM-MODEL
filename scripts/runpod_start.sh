@@ -6,25 +6,32 @@
 #   https://<podid>-8080.proxy.runpod.net/v1
 set -euo pipefail
 
+# MODEL = the checkpoint vLLM loads (may be Qwen/Qwen3-8B, ...-FP8, ...-AWQ, 14B, ...).
+# SERVED_ALIAS = the STABLE public id; keep it constant so the gateway's MODEL_NAME
+# never changes when you swap precision/size. Defaults to a fixed alias, not MODEL.
 MODEL="${MODEL_NAME:-Qwen/Qwen3-8B}"
+SERVED_ALIAS="${SERVED_MODEL_NAME:-Qwen/Qwen3-8B}"
 VLLM_PORT="${VLLM_PORT:-8000}"
 GATEWAY_PORT="${PORT:-8080}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-16384}"
 GPU_MEM_UTIL="${GPU_MEM_UTIL:-0.90}"
+# Accuracy-first extra args (bf16 + prefix caching). For a 4090 set MODEL_NAME to
+# Qwen/Qwen3-8B-FP8; for A100 raise --max-num-seqs 128 and MAX_MODEL_LEN 32768.
+VLLM_EXTRA_ARGS="${VLLM_EXTRA_ARGS:---dtype bfloat16 --max-num-seqs 32 --kv-cache-dtype auto --enable-prefix-caching}"
 
-echo "[runpod_start] launching vLLM for ${MODEL} on :${VLLM_PORT}"
+echo "[runpod_start] launching vLLM: model=${MODEL} served-as=${SERVED_ALIAS} on :${VLLM_PORT}"
 vllm serve "${MODEL}" \
-    --served-model-name "${MODEL}" \
+    --served-model-name "${SERVED_ALIAS}" \
     --port "${VLLM_PORT}" \
     --max-model-len "${MAX_MODEL_LEN}" \
     --gpu-memory-utilization "${GPU_MEM_UTIL}" \
-    ${VLLM_EXTRA_ARGS:-} &
+    ${VLLM_EXTRA_ARGS} &
 VLLM_PID=$!
 
-# Ensure the gateway talks to the local vLLM.
+# Ensure the gateway talks to the local vLLM using the STABLE alias.
 export LLM_BACKEND="${LLM_BACKEND:-openai_upstream}"
 export UPSTREAM_BASE_URL="http://localhost:${VLLM_PORT}/v1"
-export MODEL_NAME="${MODEL}"
+export MODEL_NAME="${SERVED_ALIAS}"
 
 echo "[runpod_start] waiting for vLLM to load the model..."
 for i in $(seq 1 120); do

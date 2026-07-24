@@ -12,7 +12,8 @@
 # Do NOT install both paddlepaddle and paddlepaddle-gpu — pick one.
 # After installing paddlepaddle-gpu, set OCR_USE_GPU=true in .env.
 
-paddleocr==2.9.1
+# paddleocr 3.x is required for PP-OCRv5 (2.9.x silently falls back to PP-OCRv4).
+paddleocr>=3.0,<3.2
 opencv-python-headless==4.10.0.84
 pillow==11.0.0
 shapely==2.0.6

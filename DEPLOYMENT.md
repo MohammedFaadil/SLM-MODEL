@@ -117,25 +117,21 @@ create a site bound to 443 with your cert, add a reverse-proxy inbound rule to
 
 ## 8. MSSQL persistence (optional)
 
-Turns on an audit log + job/candidate/match history. The product does **not** need
-this to work — it's for your records.
+Turns on a **request/audit log** (`slm_request_log`: path, method, status, latency,
+client). The product does **not** need this to work — it's for your records.
 
 1. `pip install -r requirements-db.txt` and install **ODBC Driver 18**.
 2. In `.env`, set either `DATABASE_URL` or the `MSSQL_*` parts (see
-   `.env.production.example`). For a domain service account, leave user/pass blank
-   to use Windows Integrated auth.
-3. Restart the gateway. On boot it connects and **creates the tables automatically**:
-   `slm_request_log`, `slm_job`, `slm_candidate`, `slm_match`.
-4. Read history:
-   ```
-   GET /api/history/jobs        GET /api/history/candidates       GET /api/history/matches
-   ```
+   `.env.production.example`). For a service account, leave user/pass blank to use
+   Windows Integrated auth.
+3. Restart the gateway. On boot it connects and **creates the `slm_request_log`
+   table automatically**.
+
 If the DB is unreachable, the gateway logs a warning and keeps serving statelessly —
 persistence never blocks the API.
 
-> When the product team gives you their **actual** MSSQL schema and tells you
-> whether the SLM should read from it (vs. keep its own tables), that's a small,
-> isolated change in `app/persistence/` — the rest of the service is unaffected.
+> If the product team later wants the SLM to read/write their **own** MSSQL schema,
+> that's a small, isolated change in `app/persistence/` — the rest is unaffected.
 
 ---
 

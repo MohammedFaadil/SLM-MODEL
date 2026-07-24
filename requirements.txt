@@ -13,6 +13,3 @@ python-dotenv==1.0.1
 # PDF native-text extraction (fast path before OCR). Both are pure-ish wheels.
 pymupdf==1.25.1
 pdfplumber==0.11.4
-
-# Fuzzy skill matching fallback (used when embeddings are disabled/unavailable).
-rapidfuzz==3.11.0

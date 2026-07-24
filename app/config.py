@@ -37,21 +37,11 @@ class Settings(BaseSettings):
     model_name: str = "qwen3:8b"
     served_model_id: str = "slm-qwen3-8b"
     force_model: bool = True
-    enable_thinking: bool = False
-    # Use Qwen3 reasoning for the long-form domain tasks (job description,
-    # candidate summary, fit justification). Big accuracy boost on GPU; set false
-    # on a CPU-only box (it's much slower there).
-    domain_reasoning: bool = True
-    # Reproducibility: greedy decoding (temperature 0) + fixed seed on every
-    # domain call, so the same inputs give the same output each time.
-    deterministic: bool = True
-    llm_seed: int = 42
     request_timeout: float = 600.0
 
     # ---- Embeddings ----
     embeddings_mode: str = "local"  # local | upstream | off
     embedding_model: str = "BAAI/bge-small-en-v1.5"
-    semantic_match_threshold: float = 0.62
 
     # ---- OCR ----
     ocr_enabled: bool = True
@@ -59,7 +49,9 @@ class Settings(BaseSettings):
     ocr_lang: str = "en"
     ocr_use_gpu: bool = False
     ocr_prefer_native_text: bool = True
-    ocr_dpi: int = 200
+    ocr_dpi: int = 300                      # higher DPI = more accurate OCR
+    ocr_max_pages: int = 30                 # cap pages processed per document
+    ocr_use_doc_orientation: bool = False   # auto-rotate scanned pages (PP-OCRv5)
 
     # ---- Uploads ----
     max_upload_mb: int = 25

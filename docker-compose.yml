@@ -1,18 +1,22 @@
-# CLOUD / GPU deployment: vLLM serves Qwen3-8B, the gateway fronts it with the
-# OpenAI-compatible API + OCR + matching.
+# CLOUD / GPU deployment: vLLM serves Qwen3-8B; the gateway fronts it with the
+# OpenAI-compatible API + OCR. Point the product at  http://<host>:8080/v1
+# (its api key = GATEWAY_API_KEYS).  Requires NVIDIA GPU + nvidia-container-toolkit.
 #
-#   docker compose up -d --build
-#   # point your platform at  http://<host>:8080/v1   (key = GATEWAY_API_KEYS)
-#
-# Requires NVIDIA GPU + nvidia-container-toolkit on the host.
+# Accuracy-first defaults below = bf16 (reference quality).
+#   A100 80GB (max accuracy):  raise --max-model-len 32768 --max-num-seqs 128 --gpu-memory-utilization 0.92
+#   RTX 4090 24GB (fast):      --model Qwen/Qwen3-8B-FP8  (keep --served-model-name Qwen/Qwen3-8B)
 services:
   vllm:
     image: vllm/vllm-openai:latest
     command: >
       --model Qwen/Qwen3-8B
       --served-model-name Qwen/Qwen3-8B
+      --dtype bfloat16
       --max-model-len 16384
       --gpu-memory-utilization 0.90
+      --max-num-seqs 32
+      --kv-cache-dtype auto
+      --enable-prefix-caching
       --port 8000
     volumes:
       - hf-cache:/root/.cache/huggingface
@@ -41,7 +45,6 @@ services:
       - MODEL_NAME=Qwen/Qwen3-8B
       - SERVED_MODEL_ID=slm-qwen3-8b
       - FORCE_MODEL=true
-      - ENABLE_THINKING=false
       - EMBEDDINGS_MODE=local
       - OCR_ENABLED=true
       - OCR_VERSION=v5

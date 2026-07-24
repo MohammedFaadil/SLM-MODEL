@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from typing import Any, AsyncIterator, Dict
 
+import json
+
 import httpx
 
 from ..config import Settings
@@ -72,20 +74,21 @@ class OpenAIUpstreamBackend(LLMBackend):
     async def chat_completion(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         return await self._post_json("/chat/completions", payload)
 
-    async def chat_completion_stream(
-        self, payload: Dict[str, Any]
-    ) -> AsyncIterator[bytes]:
+    async def _stream(self, path: str, payload: Dict[str, Any]) -> AsyncIterator[bytes]:
         payload = {**payload, "stream": True}
         try:
-            async with self._client.stream(
-                "POST", "/chat/completions", json=payload
-            ) as resp:
+            async with self._client.stream("POST", path, json=payload) as resp:
                 if resp.status_code >= 400:
                     raw = await resp.aread()
+                    text = raw.decode("utf-8", "replace")
+                    try:
+                        body: Any = json.loads(text)  # keep the OpenAI-shaped error
+                    except Exception:
+                        body = text
                     raise BackendError(
                         f"Backend returned {resp.status_code} on stream",
                         status_code=resp.status_code,
-                        body=raw.decode("utf-8", "replace"),
+                        body=body,
                     )
                 async for chunk in resp.aiter_bytes():
                     if chunk:
@@ -102,6 +105,12 @@ class OpenAIUpstreamBackend(LLMBackend):
                 status_code=504,
                 err_type="backend_timeout",
             ) from exc
+
+    def chat_completion_stream(self, payload: Dict[str, Any]) -> AsyncIterator[bytes]:
+        return self._stream("/chat/completions", payload)
+
+    def completion_stream(self, payload: Dict[str, Any]) -> AsyncIterator[bytes]:
+        return self._stream("/completions", payload)
 
     async def completion(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         return await self._post_json("/completions", payload)

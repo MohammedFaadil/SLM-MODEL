@@ -1,5 +1,5 @@
-"""SLM Gateway — an OpenAI-compatible façade over a Qwen3-8B model, plus a
-PaddleOCR resume pipeline and recruiting-domain helpers (job creation,
-candidate summaries, job↔candidate matching)."""
+"""SLM Gateway — an OpenAI-compatible façade over a Qwen3 model (served by
+vLLM/Ollama), plus a PaddleOCR endpoint for PDF/image → text. The product
+supplies all prompts; the gateway forwards them faithfully."""
 
-__version__ = "0.3.0-detailed"
+__version__ = "0.4.0-gateway"

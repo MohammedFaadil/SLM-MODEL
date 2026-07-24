@@ -39,6 +39,7 @@ class PaddleOCREngine:
         self.version = version
         self._engine: Optional[Any] = None
         self._lock = threading.Lock()
+        self._infer_lock = threading.Lock()  # PaddleOCR predictor is not thread-safe
 
     # -- construction ------------------------------------------------------ #
     def _build(self) -> Any:
@@ -59,7 +60,10 @@ class PaddleOCREngine:
                 dict(lang=self.lang, use_textline_orientation=True, device="gpu"),
                 dict(lang=self.lang, device="gpu"),
             ]
+        orient = settings.ocr_use_doc_orientation
         attempts += [
+            dict(lang=self.lang, ocr_version=ocr_version, device=device,
+                 use_doc_orientation_classify=orient, use_textline_orientation=True),
             dict(lang=self.lang, use_angle_cls=True, ocr_version=ocr_version,
                  use_gpu=self.use_gpu, show_log=False),
             dict(lang=self.lang, ocr_version=ocr_version, device=device),
@@ -88,18 +92,20 @@ class PaddleOCREngine:
     # -- inference --------------------------------------------------------- #
     def _run(self, img: np.ndarray) -> Any:
         assert self._engine is not None
-        # Newer API prefers .predict(); classic uses .ocr(img, cls=True).
-        for call in (
-            lambda: self._engine.ocr(img),
-            lambda: self._engine.ocr(img, cls=True),
-            lambda: self._engine.predict(img),
-        ):
-            try:
-                return call()
-            except TypeError:
-                continue
-        # Last resort: let the natural error surface.
-        return self._engine.ocr(img)
+        # PaddleOCR predictors are not thread-safe; serialize inference.
+        with self._infer_lock:
+            # Newer API prefers .predict(); classic uses .ocr(img, cls=True).
+            for call in (
+                lambda: self._engine.ocr(img),
+                lambda: self._engine.ocr(img, cls=True),
+                lambda: self._engine.predict(img),
+            ):
+                try:
+                    return call()
+                except TypeError:
+                    continue
+            # Last resort: let the natural error surface.
+            return self._engine.ocr(img)
 
     @staticmethod
     def _lines_from_item(item: Any) -> List[Tuple[str, float, float, float]]:

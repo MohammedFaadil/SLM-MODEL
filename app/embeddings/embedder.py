@@ -1,11 +1,7 @@
-"""Local semantic embeddings (sentence-transformers).
-
-Used for two things:
-  1. Serving /v1/embeddings to the platform (OpenAI-shaped response).
-  2. Semantic skill matching inside the domain layer ("ReactJS" ~= "React.js").
+"""Local embeddings (sentence-transformers) for serving /v1/embeddings.
 
 Kept optional: if sentence-transformers/torch aren't installed, importing this
-module raises, and callers fall back to fuzzy string matching.
+module raises and the route falls back to the upstream embeddings endpoint.
 """
 from __future__ import annotations
 
@@ -60,7 +56,11 @@ class Embedder:
         return va @ vb.T
 
     def openai_response(
-        self, input_: Union[str, List[str], None], model: Optional[str] = None
+        self,
+        input_: Union[str, List[str], None],
+        model: Optional[str] = None,
+        encoding_format: str = "float",
+        dimensions: Optional[int] = None,
     ) -> Dict[str, Any]:
         if input_ is None:
             input_ = ""
@@ -68,10 +68,24 @@ class Embedder:
         # Ignore token-id inputs; embed as strings.
         items = [str(x) for x in items]
         vecs = self.encode(items)
-        data = [
-            {"object": "embedding", "index": i, "embedding": vec.tolist()}
-            for i, vec in enumerate(vecs)
-        ]
+
+        data = []
+        for i, vec in enumerate(vecs):
+            if dimensions and dimensions < len(vec):
+                vec = vec[:dimensions]  # Matryoshka truncation
+                norm = float(np.linalg.norm(vec))
+                if norm > 0:
+                    vec = vec / norm
+            if encoding_format == "base64":
+                import base64
+
+                emb: Any = base64.b64encode(
+                    np.asarray(vec, dtype="<f4").tobytes()
+                ).decode("ascii")
+            else:
+                emb = vec.tolist()
+            data.append({"object": "embedding", "index": i, "embedding": emb})
+
         approx_tokens = sum(len(x.split()) for x in items)
         return {
             "object": "list",

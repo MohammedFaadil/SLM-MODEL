@@ -21,7 +21,7 @@ from .config import settings
 from .logging_conf import configure_logging, get_logger
 from .openai_api.router import router as openai_router
 from .persistence import db, repo
-from .routes.domain_routes import router as domain_router
+from .routes.ocr_routes import router as ocr_router
 
 configure_logging(settings.log_level)
 log = get_logger(__name__)
@@ -48,7 +48,6 @@ async def _warmup() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     log.info("SLM Gateway starting  version=%s", __version__)
-    log.info("  domain output = DETAILED (reasoning forced on for JD/summary/justification)")
     log.info("  backend=%s  model=%s", settings.llm_backend, settings.model_name)
     log.info("  upstream=%s", settings.upstream_base_url)
     log.info("  embeddings=%s (%s)", settings.embeddings_mode, settings.embedding_model)
@@ -69,11 +68,11 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="SLM Gateway (Qwen3-8B, OpenAI-compatible)",
+    title="SLM Gateway (Qwen3, OpenAI-compatible)",
     version=__version__,
-    description="OpenAI-compatible SLM for recruiting: resume OCR, candidate "
-    "summaries, and job↔candidate matching. Drop-in replacement — point your "
-    "platform's OpenAI base_url at this server's /v1.",
+    description="OpenAI-compatible SLM gateway (chat/completions/embeddings/models) "
+    "with a PaddleOCR endpoint. Drop-in replacement — point your platform's OpenAI "
+    "base_url at this server's /v1; the product supplies all prompts.",
     lifespan=lifespan,
 )
 
@@ -112,14 +111,18 @@ async def _access_log(request: Request, call_next):
 
 @app.exception_handler(BackendError)
 async def _backend_error_handler(request: Request, exc: BackendError):
+    # Pass a genuine OpenAI-shaped upstream error body through verbatim so the
+    # product's OpenAI SDK reads the real message/type/param/code.
+    if isinstance(exc.body, dict) and "error" in exc.body:
+        return JSONResponse(status_code=exc.status_code, content=exc.body)
     return JSONResponse(
         status_code=exc.status_code,
         content={
             "error": {
                 "message": exc.message,
                 "type": exc.err_type,
-                "code": exc.status_code,
-                "upstream_body": exc.body,
+                "param": None,
+                "code": None,
             }
         },
     )
@@ -134,13 +137,10 @@ async def root() -> dict:
         "openai_base_url": "/v1",
         "endpoints": {
             "chat": "/v1/chat/completions",
+            "completions": "/v1/completions",
             "embeddings": "/v1/embeddings",
             "models": "/v1/models",
             "ocr": "/api/ocr/parse",
-            "resume": "/api/resume/parse",
-            "candidate_summary": "/api/candidate/summary",
-            "jobs": "/api/jobs",
-            "match": "/api/match",
         },
         "docs": "/docs",
     }
@@ -158,7 +158,6 @@ async def health() -> JSONResponse:
             "ocr_enabled": settings.ocr_enabled,
             "ocr_version": settings.ocr_version,
             "embeddings_mode": settings.embeddings_mode,
-            "candidate_summary": True,
         },
         "model": settings.served_model_id,
     }
@@ -167,4 +166,4 @@ async def health() -> JSONResponse:
 
 
 app.include_router(openai_router)
-app.include_router(domain_router)
+app.include_router(ocr_router)

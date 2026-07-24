@@ -1,11 +1,14 @@
-"""OpenAI-compatible endpoints.
+"""OpenAI-compatible endpoints — the surface the product talks to.
 
-This is the surface your existing platform talks to. Point its OpenAI
-`base_url` at `<gateway>/v1` and keep everything else the same.
+Point the product's OpenAI `base_url` at `<gateway>/v1`. The gateway is a faithful
+transparent proxy: the product's prompts and params (streaming, JSON mode, tools,
+temperature, seed, chat_template_kwargs, ...) are forwarded to the model untouched.
+The gateway adds NO prompts and never overrides the product's sampling — accuracy is
+entirely the product's choice.
 
 Implemented:
-  POST /v1/chat/completions   (streaming + non-streaming, tools, JSON mode)
-  POST /v1/completions        (legacy)
+  POST /v1/chat/completions   (streaming + non-streaming, tools, JSON mode, ...)
+  POST /v1/completions        (streaming + non-streaming)
   POST /v1/embeddings         (local sentence-transformers or upstream)
   GET  /v1/models
 """
@@ -27,12 +30,14 @@ from .schemas import ModelCard, ModelList
 log = get_logger(__name__)
 router = APIRouter(prefix="/v1", tags=["openai"])
 
+_SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+
 
 def _normalize_model(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Route every request to the configured model.
+    """Route every request to the configured model, touching ONLY the model field.
 
-    With FORCE_MODEL=true, whatever the platform sends (e.g. "gpt-4o") is
-    replaced by MODEL_NAME so no platform-side change is needed.
+    With FORCE_MODEL=true, whatever the product sends (e.g. "gpt-4o") is replaced by
+    MODEL_NAME. All other fields (sampling, tools, response_format, ...) pass through.
     """
     payload = dict(payload)
     if settings.force_model or not payload.get("model"):
@@ -40,49 +45,60 @@ def _normalize_model(payload: Dict[str, Any]) -> Dict[str, Any]:
     return payload
 
 
-async def _guarded_stream(gen: AsyncIterator[bytes]) -> AsyncIterator[bytes]:
-    """Wrap the upstream byte stream so a mid-stream backend error is delivered
-    as a clean SSE error event instead of a broken connection."""
+def _sse_error(exc: BackendError) -> bytes:
+    """A terminal SSE error event, preserving a genuine OpenAI-shaped upstream body."""
+    body = (
+        exc.body
+        if isinstance(exc.body, dict) and "error" in exc.body
+        else {"error": {"message": exc.message, "type": exc.err_type, "param": None, "code": None}}
+    )
+    return f"data: {json.dumps(body)}\n\n".encode() + b"data: [DONE]\n\n"
+
+
+async def _sse_response(gen: AsyncIterator[bytes]) -> StreamingResponse:
+    """Stream an upstream SSE byte stream to the client.
+
+    The generator is PRIMED here so a pre-token upstream error (bad params, unknown
+    model, 401/429, unreachable) raises BackendError before the response starts —
+    the app handler then returns the real HTTP status + OpenAI error body, instead of
+    a misleading 200. Genuine mid-stream failures become a clean terminal SSE error.
+    """
+    it = gen.__aiter__()
     try:
-        async for chunk in gen:
-            yield chunk
-    except BackendError as exc:
-        err = {"error": {"message": exc.message, "type": exc.err_type, "code": exc.status_code}}
-        yield f"data: {json.dumps(err)}\n\n".encode()
-        yield b"data: [DONE]\n\n"
+        first = await it.__anext__()  # BackendError here -> app exception handler
+    except StopAsyncIteration:
+        first = None
+
+    async def body() -> AsyncIterator[bytes]:
+        if first is not None:
+            yield first
+        try:
+            async for chunk in it:
+                yield chunk
+        except BackendError as exc:
+            yield _sse_error(exc)
+
+    return StreamingResponse(body(), media_type="text/event-stream", headers=_SSE_HEADERS)
 
 
 @router.post("/chat/completions", dependencies=[Depends(require_api_key)])
 async def chat_completions(request: Request) -> Any:
-    raw = await request.json()
-    payload = _normalize_model(raw)
+    payload = _normalize_model(await request.json())
     backend = get_backend()
-
     if payload.get("stream"):
-        gen = backend.chat_completion_stream(payload)
-        return StreamingResponse(
-            _guarded_stream(gen),
-            media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-        )
-
+        return await _sse_response(backend.chat_completion_stream(payload))
     data = await backend.chat_completion(payload)
-    # Advertise our public model id rather than the internal engine tag.
     if isinstance(data, dict):
-        data["model"] = settings.served_model_id
+        data["model"] = settings.served_model_id  # advertise our public id
     return JSONResponse(data)
 
 
 @router.post("/completions", dependencies=[Depends(require_api_key)])
 async def completions(request: Request) -> Any:
-    raw = await request.json()
-    payload = _normalize_model(raw)
+    payload = _normalize_model(await request.json())
     backend = get_backend()
-
     if payload.get("stream"):
-        # Reuse chat streaming shape is not valid here; most modern platforms use
-        # chat. Fall back to non-streaming for the legacy endpoint.
-        payload["stream"] = False
+        return await _sse_response(backend.completion_stream(payload))
     data = await backend.completion(payload)
     if isinstance(data, dict):
         data["model"] = settings.served_model_id
@@ -96,21 +112,23 @@ async def embeddings(request: Request) -> Any:
 
     # Prefer local sentence-transformers unless explicitly set to upstream.
     if settings.embeddings_mode == "upstream":
-        payload = _normalize_model(raw)
-        data = await backend.embeddings(payload)
-        return JSONResponse(data)
+        return JSONResponse(await backend.embeddings(_normalize_model(raw)))
 
     try:
         from ..embeddings.embedder import get_embedder
 
         embedder = get_embedder()
-        data = embedder.openai_response(raw.get("input"), model=settings.embedding_model)
+        data = embedder.openai_response(
+            raw.get("input"),
+            model=settings.embedding_model,
+            encoding_format=raw.get("encoding_format") or "float",
+            dimensions=raw.get("dimensions"),
+        )
         return JSONResponse(data)
     except Exception as exc:  # noqa: BLE001
         log.warning("Local embeddings unavailable (%s); trying upstream.", exc)
         try:
-            payload = _normalize_model(raw)
-            return JSONResponse(await backend.embeddings(payload))
+            return JSONResponse(await backend.embeddings(_normalize_model(raw)))
         except Exception as exc2:  # noqa: BLE001
             raise BackendError(
                 f"Embeddings unavailable. Install requirements-embeddings.txt "
@@ -123,7 +141,6 @@ async def embeddings(request: Request) -> Any:
 @router.get("/models", dependencies=[Depends(require_api_key)])
 async def list_models() -> ModelList:
     cards = [ModelCard(id=settings.served_model_id)]
-    # Also advertise the raw engine tag for clients that request it directly.
     if settings.model_name != settings.served_model_id:
         cards.append(ModelCard(id=settings.model_name))
     return ModelList(data=cards)
