@@ -19,15 +19,24 @@ router = APIRouter(prefix="/api", tags=["ocr"], dependencies=[Depends(require_ap
 
 
 async def _read_upload(file: UploadFile) -> bytes:
-    data = await file.read()
-    if len(data) > settings.max_upload_bytes:
-        raise HTTPException(
-            status_code=413,
-            detail=f"File too large (> {settings.max_upload_mb} MB).",
-        )
-    if not data:
+    """Read the upload in bounded chunks, aborting as soon as it exceeds the limit
+    so a huge upload can't force a multi-GB allocation."""
+    max_bytes = settings.max_upload_bytes
+    if file.size is not None and file.size > max_bytes:
+        raise HTTPException(413, detail=f"File too large (> {settings.max_upload_mb} MB).")
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await file.read(1024 * 1024)  # 1 MB
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_bytes:
+            raise HTTPException(413, detail=f"File too large (> {settings.max_upload_mb} MB).")
+        chunks.append(chunk)
+    if total == 0:
         raise HTTPException(status_code=400, detail="Empty file.")
-    return data
+    return b"".join(chunks)
 
 
 @router.post("/ocr/parse")
