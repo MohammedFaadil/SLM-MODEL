@@ -43,6 +43,7 @@ class PaddleOCREngine:
 
     # -- construction ------------------------------------------------------ #
     def _build(self) -> Any:
+        # pyrefly: ignore [missing-import]
         from paddleocr import PaddleOCR  # imported lazily
 
         ocr_version = _VERSION_MAP.get(self.version, "PP-OCRv4")

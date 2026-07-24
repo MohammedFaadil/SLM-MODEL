@@ -9,6 +9,7 @@ import threading
 from typing import Any, Dict, List, Optional, Sequence, Union
 
 import numpy as np
+# pyrefly: ignore [missing-import]
 from sentence_transformers import SentenceTransformer
 
 from ..config import settings

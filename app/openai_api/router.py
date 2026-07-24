@@ -70,8 +70,10 @@ async def _sse_response(gen: AsyncIterator[bytes]) -> StreamingResponse:
         first = None
 
     async def body() -> AsyncIterator[bytes]:
-        if first is not None:
-            yield first
+        if first is None:  # empty upstream stream -> well-formed terminator
+            yield b"data: [DONE]\n\n"
+            return
+        yield first
         try:
             async for chunk in it:
                 yield chunk

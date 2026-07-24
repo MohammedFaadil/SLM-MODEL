@@ -11,6 +11,7 @@ Run (gateway must be running):
 import json
 
 import requests
+# pyrefly: ignore [missing-import]
 import streamlit as st
 
 st.set_page_config(page_title="SLM Gateway — Test UI", page_icon="🧪", layout="wide")
